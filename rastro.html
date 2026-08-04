@@ -28,7 +28,7 @@
         <label>Competidor para Análise:</label>
         <select id="carSelect"><option value="">Aguardando dados...</option></select>
         <button onclick="analisar()">PROCESSAR TELEMETRIA</button>
-         <button onclick="window.location.href='relatoriotelemetria.html'" style="background: #805ad5;">Gerar PDF</button>
+        <button onclick="gerarPdf()" style="background: #805ad5;">Gerar PDF</button>
         <div id="resumo">
             <div class="stats-card">Selecione um carro e clique em analisar para verificar radares e waypoints.</div>
         </div>
@@ -72,134 +72,142 @@
             const select = document.getElementById('carSelect');
             let html = '<option value="">Selecione um Carro</option>';
             if (snap.exists()) {
-                snap.forEach(c => { html += `<option value="${c.key}">Carro ${c.key} - ${c.val().nome}</option>`; });
+                snap.forEach(c => { 
+                    let nomeCompetidor = c.val().nome || c.key;
+                    html += `<option value="${c.key}">${nomeCompetidor}</option>`; 
+                });
             }
             select.innerHTML = html;
         });
 
-        async function analisar() {
-    let id = document.getElementById('carSelect').value;
-    if(!id) return;
-
-    // 1. Limpeza Inicial
-    camadas.rota.clearLayers();
-    camadas.alertas.clearLayers();
-    if(camadas.rastro) camadas.rastro.setLatLngs([]); 
-    document.getElementById('resumo').innerHTML = "Processando telemetria...";
-
-    try {
-        const [snapR, snapO] = await Promise.all([
-            db.ref('rastros/' + id).once('value'),
-            db.ref('configuracoes/percurso').once('value')
-        ]);
-
-        if(!snapR.exists()) {
-            document.getElementById('resumo').innerHTML = '<div class="stats-card">Sem rastro disponível.</div>';
-            return;
+        function gerarPdf() {
+            let id = document.getElementById('carSelect').value;
+            if (!id) {
+                alert("Por favor, selecione um piloto para gerar o PDF.");
+                return;
+            }
+            // Redireciona enviando o parâmetro do piloto selecionado
+            window.location.href = `relatoriotelemetria.html?carro=${encodeURIComponent(id)}`;
         }
 
-        let rastroArr = Object.values(snapR.val()).sort((a,b)=>a.ts-b.ts);
-        map.fitBounds(L.latLngBounds(rastroArr.map(p => [p.lat, p.lng])), {padding: [40, 40]});
+        async function analisar() {
+            let id = document.getElementById('carSelect').value;
+            if(!id) return;
 
-        let penTotal = 0;
-        let logs = "";
-        let pontosInfracao = new Map(); // Guardamos o tempo acumulado para o popup
+            // 1. Limpeza Inicial
+            camadas.rota.clearLayers();
+            camadas.alertas.clearLayers();
+            if(camadas.rastro) camadas.rastro.setLatLngs([]); 
+            document.getElementById('resumo').innerHTML = "Processando telemetria...";
 
-        if(snapO.exists()) {
-            const rota = snapO.val();
-            rota.features.forEach(feat => {
-                // Desenha Linha Guia
-                if(feat.geometry.type === 'LineString') {
-                    L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadas.rota);
+            try {
+                const [snapR, snapO] = await Promise.all([
+                    db.ref('rastros/' + id).once('value'),
+                    db.ref('configuracoes/percurso').once('value')
+                ]);
+
+                if(!snapR.exists()) {
+                    document.getElementById('resumo').innerHTML = '<div class="stats-card">Sem rastro disponível.</div>';
+                    return;
                 }
 
-                // Validação de Waypoints (Círculos)
-                if(feat.properties?.type === 'circle') {
-                    let coords = feat.geometry.coordinates;
-                    let raioM = feat.properties.radius || 50;
-                    let visitou = rastroArr.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(coords))*1000) <= raioM);
-                    L.circle([coords[1], coords[0]], { radius: raioM, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2 }).addTo(camadas.rota);
-                    if(!visitou) { penTotal += 2000; logs += "❌ WP Perdido (-2000)<br>"; }
-                }
+                let rastroArr = Object.values(snapR.val()).sort((a,b)=>a.ts-b.ts);
+                map.fitBounds(L.latLngBounds(rastroArr.map(p => [p.lat, p.lng])), {padding: [40, 40]});
 
-                // Identificação de Radares (Polígonos)
-                else if(feat.geometry.type.includes('Polygon')) {
-                    L.geoJSON(feat, {style:{color:'#3498db', weight:1, fillOpacity:0.1}}).addTo(camadas.rota);
-                    const vMax = (feat.properties.velocidade || 60) * 1.1;
-                    let tempoExcesso = 0;
+                let penTotal = 0;
+                let logs = "";
+                let pontosInfracao = new Map(); // Guardamos o tempo acumulado para o popup
 
-                    rastroArr.forEach((p, i) => {
-                        if(i > 0) {
-                            const dur = p.ts - rastroArr[i-1].ts;
-                            // Se estiver dentro do polígono e acima da velocidade
-                            if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
-                                tempoExcesso += dur;
-                                // Marca ponto como infração e guarda o tempo acumulado naquele momento
-                                pontosInfracao.set(p.ts, Math.round(tempoExcesso/1000));
+                if(snapO.exists()) {
+                    const rota = snapO.val();
+                    rota.features.forEach(feat => {
+                        // Desenha Linha Guia
+                        if(feat.geometry.type === 'LineString') {
+                            L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadas.rota);
+                        }
+
+                        // Validação de Waypoints (Círculos)
+                        if(feat.properties?.type === 'circle') {
+                            let coords = feat.geometry.coordinates;
+                            let raioM = feat.properties.radius || 50;
+                            let visitou = rastroArr.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(coords))*1000) <= raioM);
+                            L.circle([coords[1], coords[0]], { radius: raioM, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2 }).addTo(camadas.rota);
+                            if(!visitou) { penTotal += 2000; logs += "❌ WP Perdido (-2000)<br>"; }
+                        }
+
+                        // Identificação de Radares (Polígonos)
+                        else if(feat.geometry.type.includes('Polygon')) {
+                            L.geoJSON(feat, {style:{color:'#3498db', weight:1, fillOpacity:0.1}}).addTo(camadas.rota);
+                            const vMax = (feat.properties.velocidade || 60) * 1.1;
+                            let tempoExcesso = 0;
+
+                            rastroArr.forEach((p, i) => {
+                                if(i > 0) {
+                                    const dur = p.ts - rastroArr[i-1].ts;
+                                    // Se estiver dentro do polígono e acima da velocidade
+                                    if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
+                                        tempoExcesso += dur;
+                                        // Marca ponto como infração e guarda o tempo acumulado naquele momento
+                                        pontosInfracao.set(p.ts, Math.round(tempoExcesso/1000));
+                                    }
+                                }
+                            });
+
+                            if(tempoExcesso > 10000) {
+                                let pts = (Math.floor((tempoExcesso - 10000) / 10000) + 1) * 500;
+                                penTotal += pts;
+                                logs += `⚠️ Radar: Excesso (${Math.round(tempoExcesso/1000)}s) -${pts} pts<br>`;
                             }
                         }
                     });
-
-                    if(tempoExcesso > 10000) {
-                        let pts = (Math.floor((tempoExcesso - 10000) / 10000) + 1) * 500;
-                        penTotal += pts;
-                        logs += `⚠️ Radar: Excesso (${Math.round(tempoExcesso/1000)}s) -${pts} pts<br>`;
-                    }
                 }
-            });
+
+                // 2. DESENHO DO RASTRO OTIMIZADO (VERDES RALO / VERMELHO NÍTIDO)
+                const espacamentoVerde = 4; // Mostra 1 a cada 4 pontos normais
+                
+                rastroArr.forEach((p, index) => {
+                    // Se o ponto foi marcado como infração
+                    if(pontosInfracao.has(p.ts)) {
+                        L.circleMarker([p.lat, p.lng], {
+                            radius: 5, 
+                            color: '#7B0000', 
+                            weight: 1, 
+                            fillColor: 'red', 
+                            fillOpacity: 0.9,
+                            zIndexOffset: 1000 
+                        }).addTo(camadas.alertas).bindPopup(`
+                            <div style="color:red; font-weight:bold;">⚠️ EXCESSO DETECTADO</div>
+                            Velocidade: <b>${p.vel} km/h</b><br>
+                            Tempo no Radar: ${pontosInfracao.get(p.ts)}s<br>
+                            Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}
+                        `);
+                    } 
+                    // Se for ponto normal, aplica o espaçamento
+                    else if(index % espacamentoVerde === 0) {
+                        L.circleMarker([p.lat, p.lng], {
+                            radius: 2.5, 
+                            color: '#b8860b', 
+                            weight: 1, 
+                            fillColor: '#ffff00', 
+                            fillOpacity: 0.5
+                        }).addTo(camadas.alertas).bindPopup(`
+                            <b>Rastro OK</b><br>
+                            Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}<br>
+                            Vel: ${p.vel} km/h
+                        `);
+                    }
+                });
+
+                // 3. Atualiza Resumo Lateral
+                document.getElementById('resumo').innerHTML = `
+                    <div class="stats-card">
+                        <strong>Resultado: ${id}</strong><hr>
+                        ${logs || "✅ Sem penalidades de radar."}<br>
+                        <b>Total: -${penTotal} pts</b>
+                    </div>`;
+
+            } catch (e) { console.error(e); }
         }
-
-        // 2. DESENHO DO RASTRO OTIMIZADO (VERDES RALO / VERMELHO NÍTIDO)
-        const espacamentoVerde = 4; // Mostra 1 a cada 4 pontos normais
-        
-        rastroArr.forEach((p, index) => {
-            // Se o ponto foi marcado como infração
-            if(pontosInfracao.has(p.ts)) {
-                L.circleMarker([p.lat, p.lng], {
-                    radius: 5, 
-                    color: '#7B0000', 
-                    weight: 1, 
-                    fillColor: 'red', 
-                    fillOpacity: 0.9,
-                    zIndexOffset: 1000 
-                }).addTo(camadas.alertas).bindPopup(`
-                    <div style="color:red; font-weight:bold;">⚠️ EXCESSO DETECTADO</div>
-                    Velocidade: <b>${p.vel} km/h</b><br>
-                    Tempo no Radar: ${pontosInfracao.get(p.ts)}s<br>
-                    Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}
-                `);
-            } 
-            // Se for ponto normal, aplica o espaçamento
-            else if(index % espacamentoVerde === 0) {
-                L.circleMarker([p.lat, p.lng], {
-                    radius: 2.5, 
-                    color: '#b8860b', 
-                    weight: 1, 
-                    fillColor: '#ffff00', 
-                    fillOpacity: 0.5
-                }).addTo(camadas.alertas).bindPopup(`
-                    <b>Rastro OK</b><br>
-                    Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}<br>
-                    Vel: ${p.vel} km/h
-                `);
-            }
-        });
-
-        // 3. Atualiza Resumo Lateral
-        document.getElementById('resumo').innerHTML = `
-            <div class="stats-card">
-                <strong>Resultado: Carro ${id}</strong><hr>
-                ${logs || "✅ Sem penalidades de radar."}<br>
-                <b>Total: -${penTotal} pts</b>
-            </div>`;
-
-    } catch (e) { console.error(e); }
-}
     </script>
 </body>
 </html>
-
-
-
-
-
