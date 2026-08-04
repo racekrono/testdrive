@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Meu Rastro - Race Krono</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; display: flex; height: 100vh; background: #121212; color: white; font-family: sans-serif; overflow: hidden; }
+        
+        /* O mapa ocupa a tela inteira para o piloto */
+        #map { flex-grow: 1; height: 100vh; background: #222; }
+
+        /* Sidebar escondida por padrão para privacidade */
+        #sidebar { display: none; }
+
+        /* Botão flutuante para voltar ao painel principal */
+        .btn-voltar { 
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 1000;
+            background: #FFD700;
+            color: #000000;
+            padding: 12px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #000;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-voltar:active {
+            background: #ccac00;
+        }
+
+        /* Card de resumo flutuante para o piloto ver suas penalidades */
+        #resumo-flutuante {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 250px;
+            background: rgba(30, 30, 30, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 5px solid #f1c40f;
+            font-size: 13px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+        }
+
+        .stats-card hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
+        .leaflet-control-layers { background: white !important; color: black !important; }
+    </style>
+</head>
+<body>
+
+    <!-- Botão de Voltar Integrado -->
+    <button class="btn-voltar" onclick="voltarAoApp()">← Voltar Prova</button>
+
+     <div id="resumo-flutuante">
+        <div id="resumoContent">Carregando telemetria...</div>
+    </div>
+
+    <select id="carSelect" style="display:none;"></select>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+
+    <script>
+        // Função para manipulação e fechamento da tela de rastro
+        function voltarAoApp() {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+                window.Capacitor.Plugins.Browser.close();
+            } else if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.close();
+            }
+        }
+
+        // Lê o carro da URL (?carro=NN) ou do localStorage como fallback
+        const carroURL = new URLSearchParams(location.search).get('carro');
+        if (carroURL) {
+            localStorage.setItem('rally_carro_ativo', carroURL);
+        }
+        var map = L.map('map').setView([-12.26, -38.96], 13);
+        var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri' }).addTo(map);
+        var rua = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        L.control.layers({"Satélite": sat, "Rua": rua}).addTo(map);
+
+        var camadas = {
+            rota: L.featureGroup().addTo(map),
+            alertas: L.featureGroup().addTo(map)
+        };
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com"
+        };
+        firebase.initializeApp(firebaseConfig);
+        var db = firebase.database();
+
+        // Bloqueio de Privacidade: Identifica o carro do localStorage
+        const meuCarro = localStorage.getItem('rally_carro_ativo');
+
+        window.onload = function() {
+            if (!meuCarro) {
+                alert("Erro: Carro não identificado. Inicie a prova primeiro.");
+                window.location.href = 'index.html';
+                return;
+            }
+            // Preenche o select invisível e inicia a análise
+            const select = document.getElementById('carSelect');
+            select.innerHTML = `<option value="${meuCarro}">${meuCarro}</option>`;
+            select.value = meuCarro;
+            
+            analisar();
+        };
+
+        async function analisar() {
+            let id = meuCarro; 
+
+            camadas.rota.clearLayers();
+            camadas.alertas.clearLayers();
+            document.getElementById('resumoContent').innerHTML = "Processando sua rota...";
+
+            try {
+                const [snapR, snapO] = await Promise.all([
+                    db.ref('rastros/' + id).once('value'),
+                    db.ref('configuracoes/percurso').once('value')
+                ]);
+
+                if(!snapR.exists()) {
+                    document.getElementById('resumoContent').innerHTML = "Nenhum dado de rastro encontrado.";
+                    return;
+                }
+
+                let rastroArr = Object.values(snapR.val()).sort((a,b)=>a.ts-b.ts);
+                map.fitBounds(L.latLngBounds(rastroArr.map(p => [p.lat, p.lng])), {padding: [40, 40]});
+
+                let penTotal = 0;
+                let logs = "";
+                let pontosInfracao = new Map();
+
+                if(snapO.exists()) {
+                    const rota = snapO.val();
+                    rota.features.forEach(feat => {
+                        if(feat.geometry.type === 'LineString') {
+                            L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadas.rota);
+                        }
+
+                        if(feat.properties?.type === 'circle') {
+                            let coords = feat.geometry.coordinates;
+                            let raioM = feat.properties.radius || 50;
+                            let visitou = rastroArr.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(coords))*1000) <= raioM);
+                            L.circle([coords[1], coords[0]], { radius: raioM, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2 }).addTo(camadas.rota);
+                            if(!visitou) { penTotal += 2000; logs += "❌ WP Perdido (-2000)<br>"; }
+                        }
+
+                        else if(feat.geometry.type.includes('Polygon')) {
+                            const vMax = (feat.properties.velocidade || 60) * 1.1;
+                            let tempoExcesso = 0;
+
+                            rastroArr.forEach((p, i) => {
+                                if(i > 0) {
+                                    const dur = p.ts - rastroArr[i-1].ts;
+                                    if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
+                                        tempoExcesso += dur;
+                                        pontosInfracao.set(p.ts, Math.round(tempoExcesso/1000));
+                                    }
+                                }
+                            });
+
+                            if(tempoExcesso > 10000) {
+                                let pts = (Math.floor((tempoExcesso - 10000) / 10000) + 1) * 500;
+                                penTotal += pts;
+                                logs += `⚠️ Radar: Excesso (${Math.round(tempoExcesso/1000)}s) -${pts} pts<br>`;
+                            }
+                        }
+                    });
+                }
+
+                const espacamentoVerde = 4;
+                rastroArr.forEach((p, index) => {
+                    if(pontosInfracao.has(p.ts)) {
+                        L.circleMarker([p.lat, p.lng], { radius: 5, color: '#7B0000', weight: 1, fillColor: 'red', fillOpacity: 0.9 }).addTo(camadas.alertas).bindPopup(`<b>⚠️ EXCESSO: ${p.vel} km/h</b>`);
+                    } else if(index % espacamentoVerde === 0) {
+                        L.circleMarker([p.lat, p.lng], { radius: 2.5, color: '#b8860b', weight: 1, fillColor: '#ffff00', fillOpacity: 0.5 }).addTo(camadas.alertas);
+                    }
+                });
+
+                document.getElementById('resumoContent').innerHTML = `
+                    <div class="stats-card">
+                        <strong>Meu Desempenho (Carro ${id})</strong><hr>
+                        ${logs || "✅ Sem excessos de velocidade."}<br>
+                        <b>Penalidade Total: -${penTotal} pts</b>
+                    </div>`;
+
+            } catch (e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>

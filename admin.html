@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Painel Admin Rally - Oficial</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+    <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: #1a202c; font-family: sans-serif; display: flex; flex-direction: column; }
+    
+    #toolbar { 
+        background: #2d3748; 
+        display: flex; 
+        flex-wrap: wrap; 
+        padding: 10px; 
+        gap: 15px; 
+        z-index: 9999; 
+        position: relative;
+        border-bottom: 1px solid #4a5568;
+    }
+
+    .button-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        background: rgba(255,255,255,0.05);
+        padding: 8px;
+        border-radius: 8px;
+    }
+
+    #map { flex-grow: 1; width: 100%; background: #a0aec0; }
+
+    button { 
+        padding: 10px 14px; 
+        background: #4a5568; 
+        color: white; 
+        border: none; 
+        border-radius: 4px; 
+        cursor: pointer; 
+        font-weight: bold; 
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    button:hover { filter: brightness(1.2); }
+    
+    input, select { 
+        padding: 8px; 
+        border-radius: 4px; 
+        border: none; 
+        background: #1a202c; 
+        color: white; 
+        font-size: 12px;
+    }
+
+    .marker-label { background: #ed8936; border: 2px solid white; border-radius: 50%; color: white; font-weight: bold; text-align: center; line-height: 26px; width: 30px; height: 30px; font-size: 12px; }
+
+    @media (max-width: 600px) {
+        .button-group { width: 100%; justify-content: center; }
+        input { width: 100%; }
+    }
+</style>
+</head>
+<body>
+    <div id="toolbar">
+        <div class="button-group">
+            <input type="text" id="coordsInput" placeholder="Lat, Lng (ex: -12.2,-38.9)">
+            <button onclick="adicionarPontoNaLinha()" style="background: #4a5568;">📍 Add Ponto</button>
+            </div>
+        <div class="button-group">
+            <input type="text" id="cityInput" placeholder="Cidade...">
+            <button onclick="buscar()">🔍 Buscar Cidade</button>
+            <button onclick="salvar()" style="background: #c53030;">💾 Salvar Trajeto</button>
+            <button onclick="window.location.href='editor.html'" style="background: #d69e2e;">📋​ Editor Planilha</button>
+            <button onclick="document.getElementById('importPlanilhaInput').click()" style="background: #2b6cb0; border: 1px solid white;">📂 Importar Planilha (JSON)</button>
+    <input type="file" id="importPlanilhaInput" accept=".json" style="display:none" onchange="importarPlanilhaParaFirebase(this)">
+            <button id="btnStatusProva" onclick="alternarStatusProva()">Aguardando...</button>
+        </div>
+
+        <div class="button-group">
+            <button onclick="window.location.href='rastro.html'" style="background: #805ad5;">🗺️ Rastro</button>
+            <button onclick="apurar()" style="background: #dd6b20;">🏁 Rodar Apuração</button>
+            <button onclick="window.location.href='tempos.html'" style="background: #3182ce;">⏱️ Tempo Manual</button>
+            <button onclick="window.location.href='tempos-automaticos.html'" style="background: #d69e2e;">⏱️ Tempo Automático</button>
+            <button onclick="window.location.href='fotos.html'" style="background: #3182ce;">📸 Pontuação Fotos</button>
+            <button onclick="window.location.href='penalizacoes.html'" style="background: #38a169;">🚨​​ Penalização</button>
+            <button onclick="window.location.href='gestao.html'" style="background: #3182ce;">🧏​ Gestão Pilotos</button>
+        </div>
+
+        <div class="button-group">
+            <button onclick="window.location.href='ranking-geral.html'" style="background: #b7791f; border: 1px solid #f6e05e;">🏆 RESULTADO </button>
+        </div>
+
+        <div class="button-group">
+            <select id="carSelector">
+                <option value="">Carro...</option>
+            </select>
+            <button onclick="excluirCarro()" style="background: #e53e3e;">🗑️ Excluir</button>  
+            <button onclick="resetar()" style="background: #38a169;">⚠️ Resetar Tudo</button>
+            <button onclick="excluirTodosCarros()" style="background: #c53030; border: 1px solid white;">💀 APAGAR TODOS OS CARROS</button>
+            <button onclick="logoffGeral()" style="background: #2d3748; border: 1px solid #a0aec0;">🚪 LOGOFF GERAL</button>
+            <button onclick="exportarBackup()" style="background: #2b6cb0;">📤 Exportar Backup</button>
+    <button onclick="importarBackup()" style="background: #718096;">📥 Importar Backup</button>
+        </div>
+    </div>
+    
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+
+    <script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+        authDomain: "cronometro-rally.firebaseapp.com",
+        databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+        projectId: "cronometro-rally",
+        storageBucket: "cronometro-rally.firebasestorage.app",
+        messagingSenderId: "341731891354",
+        appId: "1:341731891354:web:d0c34265be68015e98a723"
+    };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(app);
+    
+    let map, drawnItems;
+    let pontosTemporarios = [];
+    let linhaTemporaria; 
+
+    function initMap() {
+        const camadaRuas = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+        const camadaSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+        
+        map = L.map('map', { 
+            center: [-12.26, -38.96], 
+            zoom: 13, 
+            layers: [camadaRuas] 
+        });
+
+        linhaTemporaria = L.polyline([], {color: 'yellow', dashArray: '5, 5'}).addTo(map);
+        L.control.layers({ "Mapa": camadaRuas, "Satélite": camadaSat }).addTo(map);
+        drawnItems = new L.FeatureGroup().addTo(map);
+        
+        const drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: { polyline: true, polygon: true, circle: true, rectangle: false, marker: false, circlemarker: false }
+        });
+        map.addControl(drawControl);
+
+ map.on(L.Draw.Event.CREATED, (e) => {
+    const layer = e.layer;
+    layer.feature = layer.feature || { type: "Feature", properties: {} };
+
+    if (e.layerType === 'polygon') {
+        const v = prompt("Velocidade Máxima Radar (KM/H):", "60");
+        layer.feature.properties.velocidade = parseInt(v) || 60;
+    }
+    
+    if (e.layerType === 'circle') {
+        // Pergunta se é um Waypoint ou Chegada
+        const ehChegada = confirm("OK para CHEGADA ou CANCELAR para WAYPOINT (Radar)");
+        layer.feature.properties.type = 'circle';
+        layer.feature.properties.radius = layer.getRadius();
+        
+        if (ehChegada) {
+            layer.feature.properties.subType = 'chegada';
+            layer.setStyle({color: '#f1c40f', weight: 5, fillOpacity: 0.4}); // Amarelo para Chegada
+        } else {
+            layer.feature.properties.subType = 'waypoint';
+            layer.setStyle({color: '#3182ce'}); // Azul para Waypoint
+        }
+    }
+    drawnItems.addLayer(layer);
+});
+
+        carregarTrajeto();
+        rastrearCarros();
+        atualizarSeletorCarros();
+        monitorarStatusProva();
+        
+        setTimeout(() => { map.invalidateSize(); }, 500);
+    }
+
+    window.adicionarPontoNaLinha = function() {
+        const input = document.getElementById('coordsInput').value;
+        const partes = input.split(',');
+        if (partes.length !== 2) { alert("Formato inválido!"); return; }
+        const lat = parseFloat(partes[0].trim());
+        const lng = parseFloat(partes[1].trim());
+        if (isNaN(lat) || isNaN(lng)) { alert("Coordenadas inválidas."); return; }
+        pontosTemporarios.push([lat, lng]);
+        linhaTemporaria.setLatLngs(pontosTemporarios);
+        map.setView([lat, lng], 15);
+        document.getElementById('coordsInput').value = "";
+    };
+
+    window.finalizarLinhaManual = function() {
+        if (pontosTemporarios.length < 2) { alert("Adicione pelo menos 2 pontos."); return; }
+        const novaLinha = L.polyline(pontosTemporarios, { color: '#FF007F' });
+        novaLinha.addTo(drawnItems);
+        limparTemporarios();
+        alert("Linha criada! Clique em SALVAR TRAJETO para gravar.");
+    };
+
+    window.limparTemporarios = function() {
+        pontosTemporarios = [];
+        if(linhaTemporaria) linhaTemporaria.setLatLngs([]);
+    };
+
+    window.onload = initMap;
+
+    window.buscar = async function() {
+        const q = document.getElementById('cityInput').value;
+        if(!q) return;
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+            const data = await res.json();
+            if(data[0]) map.setView([data[0].lat, data[0].lon], 14);
+        } catch(e) { alert("Erro na busca."); }
+    };
+
+    window.salvar = function() {
+        const data = { type: "FeatureCollection", features: [] };
+        drawnItems.eachLayer(layer => {
+            const gj = layer.toGeoJSON();
+            gj.properties = gj.properties || {};
+            if (layer instanceof L.Circle) {
+                gj.properties.type = 'circle';
+                gj.properties.radius = layer.getRadius();
+            }
+            data.features.push(gj);
+        });
+        db.ref('configuracoes/percurso').set(data).then(() => alert("✅ Trajeto salvo!"));
+    };
+
+    function carregarTrajeto() {
+        db.ref('configuracoes/percurso').once('value', snap => {
+            if(snap.exists()) {
+                L.geoJSON(snap.val(), {
+                    pointToLayer: (f, latlng) => f.properties?.type === 'circle' ? L.circle(latlng, { radius: f.properties.radius }) : null,
+                    onEachFeature: (f, l) => { drawnItems.addLayer(l); }
+                });
+            }
+        });
+    }
+
+    function rastrearCarros() {
+        const markers = {};
+        db.ref('posicoes').on('value', snap => {
+            snap.forEach(c => {
+                const id = c.key; 
+                const p = c.val();
+                if(markers[id]) {
+                    markers[id].setLatLng([p.lat, p.lng]);
+                } else {
+                    markers[id] = L.marker([p.lat, p.lng], { 
+                        icon: L.divIcon({ className:'marker-label', html: id, iconSize:[30,30] }) 
+                    }).addTo(map);
+                    markers[id].on('click', function() {
+                        db.ref(`competidores/${id}/nome`).once('value', nomeSnap => {
+                            const nomeComp = nomeSnap.val() || "Não cadastrado";
+                            const velocidade = p.vel ? `<br>Velocidade: ${p.vel} km/h` : "";
+                            markers[id].bindPopup(`<b>Carro: ${id}</b><br>Piloto: ${nomeComp}${velocidade}`).openPopup();
+                        });
+                    });
+                }
+            });
+        });
+    }
+
+    window.apurar = async function() {
+    if(!confirm("Rodar apuração?")) return;
+    const config = (await db.ref('configuracoes/percurso').once('value')).val();
+    const rastros = (await db.ref('rastros').once('value')).val();
+    const comps = (await db.ref('competidores').once('value')).val();
+    if(!config || !rastros) return alert("Erro: Dados insuficientes.");
+
+    for(let id in comps) {
+        let pen = 0;
+        let tempoOficialChegada = null;
+        const rastroArr = Object.values(rastros[id] || {}).sort((a, b) => a.ts - b.ts);
+        if(rastroArr.length === 0) continue;
+
+        config.features.forEach(feat => {
+            // LÓGICA DE RADAR (POLYGON) - Mantida conforme seu código
+            if(feat.geometry.type === 'Polygon') {
+                const vMax = (feat.properties.velocidade || 60) * 1.1;
+                let tempoExcessoMs = 0;
+                for(let i = 1; i < rastroArr.length; i++) {
+                    const p = rastroArr[i];
+                    const duration = p.ts - rastroArr[i-1].ts;
+                    if (duration > 30000) continue; 
+                    if(p.vel > 2 && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
+                        if(p.vel > vMax) tempoExcessoMs += duration;
+                    }
+                }
+                if(tempoExcessoMs > 10000) {
+                    pen += (Math.floor((tempoExcessoMs - 10000) / 10000) + 1) * 500;
+                }
+            } 
+            
+            // LÓGICA DE CÍRCULOS (WAYPOINT OU CHEGADA)
+            else if(feat.properties?.type === 'circle') {
+                const centro = feat.geometry.coordinates;
+                const raio = feat.properties.radius / 1000;
+
+                // Encontra o primeiro ponto do rastro que entrou no círculo
+                const pontoEntrada = rastroArr.find(pt => 
+                    turf.distance(turf.point([pt.lng, pt.lat]), turf.point(centro)) <= raio
+                );
+
+                if (feat.properties.subType === 'chegada') {
+                    if (pontoEntrada) {
+                        tempoOficialChegada = pontoEntrada.ts;
+                    }
+                } else {
+                    // Se for waypoint comum e não passou, penaliza
+                    if(!pontoEntrada) pen += 2000;
+                }
+            }
+        });
+
+        // Salva os resultados no competidor
+        const updates = { 
+            pontos: 0 - pen,
+            horaChegada: tempoOficialChegada || "Não finalizou"
+        };
+        db.ref(`competidores/${id}`).update(updates);
+    }
+    alert("✅ Apuração concluída!");
+};
+
+    function atualizarSeletorCarros() {
+        const selector = document.getElementById('carSelector');
+        db.ref('competidores').on('value', snap => {
+            selector.innerHTML = '<option value="">Selecionar Carro...</option>';
+            snap.forEach(child => {
+                const carId = child.key;
+                const option = document.createElement('option');
+                option.value = carId;
+                option.textContent = `Carro ${carId}`;
+                selector.appendChild(option);
+            });
+        });
+    }
+
+    window.excluirCarro = async function() {
+        const carId = document.getElementById('carSelector').value;
+        if (!carId) { alert("Selecione um carro."); return; }
+        if (confirm(`Excluir Carro ${carId}?`)) {
+            await Promise.all([
+                db.ref(`competidores/${carId}`).remove(),
+                db.ref(`posicoes/${carId}`).remove(),
+                db.ref(`rastros/${carId}`).remove(),
+                db.ref(`tempos/${carId}`).remove()
+            ]);
+            location.reload(); 
+        }
+    };
+
+    function monitorarStatusProva() {
+        const btn = document.getElementById('btnStatusProva');
+        db.ref('configuracoes/provaAberta').on('value', snap => {
+            const aberta = snap.val();
+            btn.innerText = aberta ? "🔓 PROVA ABERTA" : "🔒 PROVA FECHADA";
+            btn.style.background = aberta ? "#38a169" : "#e53e3e";
+        });
+    }
+
+    window.alternarStatusProva = function() {
+        const ref = db.ref('configuracoes/provaAberta');
+        ref.once('value', snap => { ref.set(!snap.val()); });
+    };
+
+    // --- FUNÇÃO RESETAR TUDO CORRIGIDA ---
+window.resetar = async function() {
+    const senha = prompt("Senha de Segurança para RESET TOTAL:");
+    if (senha === "75999862628") {
+        if (confirm("⚠️ ISSO APAGARÁ TUDO (inclusive a planilha). Confirma?")) {
+            try {
+                // Em vez de db.ref('/').remove(), limpamos os nós principais um por um
+                const caminhos = ['competidores', 'posicoes', 'tempos', 'rastros', 'prova_atual', 'configuracoes'];
+                
+                for (const path of caminhos) {
+                    console.log(`Limpando: ${path}...`);
+                    await db.ref(path).remove();
+                }
+
+                alert("✅ Sistema resetado com sucesso!");
+                location.reload();
+            } catch (err) {
+                alert("Erro ao resetar: " + err.message);
+                console.error(err);
+            }
+        }
+    } else if (senha !== null) {
+        alert("Senha incorreta!");
+    }
+};
+
+// --- FUNÇÃO EXCLUIR TODOS OS CARROS CORRIGIDA (FATIA OS RASTROS) ---
+window.excluirTodosCarros = async function() {
+    const senha = prompt("SENHA PARA DELETAR TODOS OS CARROS:");
+    if (senha === "75999862628") {
+        if (confirm("ATENÇÃO: Isso apagará rastros pesados. Confirmar?")) {
+            try {
+                // Apaga os dados leves primeiro
+                await db.ref('competidores').remove();
+                await db.ref('posicoes').remove();
+                await db.ref('tempos').remove();
+
+                // Para os rastros (que geram o erro WRITE_TOO_BIG), apagamos um por um
+                const rastrosSnap = await db.ref('rastros').once('value');
+                if (rastrosSnap.exists()) {
+                    const ids = Object.keys(rastrosSnap.val());
+                    for (const id of ids) {
+                        console.log(`Removendo rastro pesado do carro ${id}...`);
+                        await db.ref(`rastros/${id}`).remove();
+                    }
+                }
+                
+                alert("🔥 Todos os dados de carros foram removidos com sucesso!");
+                location.reload();
+            } catch (err) {
+                alert("Erro ao remover dados pesados: " + err.message);
+            }
+        }
+    } else if (senha !== null) {
+        alert("Senha incorreta!");
+    }
+};
+    window.logoffGeral = function() {
+    const senha = prompt("DIGITE A SENHA PARA LOGOFF GERAL:");
+    
+    if (senha === "75999862628") {
+        if (confirm("Isso forçará a saída de todos os pilotos agora. Continuar?")) {
+            // Define uma flag de comando no banco com o timestamp atual
+            db.ref('configuracoes/comandoLogoff').set(Date.now()).then(() => {
+                alert("Sinal de logoff enviado para todos os dispositivos!");
+            });
+        }
+    } else if (senha !== null) {
+        alert("Senha incorreta!");
+    }
+};
+   // FUNÇÃO PARA EXPORTAR (BACKUP)
+window.exportarBackup = function() {
+    db.ref('/').once('value').then(snapshot => {
+        const data = JSON.stringify(snapshot.val(), null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        const dataAtual = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `backup_rally_${dataAtual}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }).catch(err => alert("Erro ao gerar backup: " + err));
+};
+
+// FUNÇÃO PARA IMPORTAR (RESTAURAR)
+window.importarBackup = function() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+
+    input.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        
+        reader.onload = async readerEvent => {
+            try {
+                const json = JSON.parse(readerEvent.target.result);
+                
+                if (confirm("⚠️ O arquivo é grande. Vamos importar por partes para evitar erros. Confirma?")) {
+                    const senha = prompt("Digite a senha de segurança:");
+                    if (senha === "75999862628") {
+                        
+                        // IMPORTAÇÃO POR PARTES (Fatiada)
+                        try {
+                            // 1. Importa configurações e competidores (leves)
+                            if (json.configuracoes) await db.ref('configuracoes').set(json.configuracoes);
+                            if (json.competidores) await db.ref('competidores').set(json.competidores);
+                            
+                            // 2. Importa os rastros carro por carro (pesados)
+                            if (json.rastros) {
+                                const carros = Object.keys(json.rastros);
+                                for (let i = 0; i < carros.length; i++) {
+                                    const carroId = carros[i];
+                                    console.log(`Importando rastro do carro ${carroId}...`);
+                                    await db.ref(`rastros/${carroId}`).set(json.rastros[carroId]);
+                                }
+                            }
+
+                            alert("✅ Backup restaurado com sucesso (em partes)!");
+                            location.reload();
+                            
+                        } catch (err) {
+                            alert("Erro durante a importação fatiada: " + err);
+                        }
+
+                    } else {
+                        alert("Senha incorreta!");
+                    }
+                }
+            } catch (err) {
+                alert("Erro ao ler o arquivo JSON: " + err);
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    input.click();
+};
+        window.importarPlanilhaParaFirebase = function(input) {
+    const arquivo = input.files[0];
+    if (!arquivo) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const dadosPlanilha = JSON.parse(e.target.result);
+            
+            if (!Array.isArray(dadosPlanilha)) {
+                alert("Erro: O arquivo não parece ser uma planilha válida (deve ser uma lista de pontos).");
+                return;
+            }
+
+            if (confirm(`Deseja publicar esta planilha com ${dadosPlanilha.length} pontos para todos os pilotos?`)) {
+                // Salvando na rota 'prova_atual' usando a instância db que você já tem
+                db.ref('prova_atual').set(dadosPlanilha)
+                .then(() => {
+                    alert("✅ Planilha publicada com sucesso!");
+                    // Opcional: limpa o input para permitir importar o mesmo arquivo novamente se necessário
+                    input.value = ""; 
+                })
+                .catch(err => alert("Erro ao salvar no Firebase: " + err));
+            }
+        } catch (err) {
+            alert("Erro ao processar o arquivo JSON: " + err);
+        }
+    };
+    reader.readAsText(arquivo);
+};
+</script>
+</body>
+</html>

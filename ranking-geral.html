@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório de Prova</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a202c; color: white; padding: 20px; margin: 0; }
+        .container { max-width: 1100px; margin: auto; }
+        .header-ranking { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #4a5568; padding-bottom: 20px; }
+        h1 { color: #e67e22; margin: 0; }
+        .cat-card { background: #2d3748; border-radius: 12px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        h2 { color: #e67e22; border-bottom: 1px solid #4a5568; padding-bottom: 10px; margin-top: 0; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+        th { text-align: left; color: #a0aec0; padding: 12px 10px; border-bottom: 1px solid #4a5568; font-size: 13px; text-transform: uppercase; }
+        td { padding: 12px 10px; border-bottom: 1px solid #3e4b5f; vertical-align: middle; }
+
+        .col-pos { width: 60px; font-weight: bold; color: #e67e22; }
+        .col-num { width: 60px; }
+        .col-piloto { width: auto; }
+        .col-tempo { width: 110px; font-family: monospace; color: #fbd38d; font-weight: bold; }
+        .col-fotos { width: 90px; text-align: center; color: #63b3ed; font-weight: bold; }
+        .col-penal { width: 110px; text-align: center; color: #fc8181; font-weight: bold; }
+        .col-pontos { width: 140px; text-align: center; font-weight: bold; color: #48bb78; font-size: 1.1rem; }
+
+        #logoInvisivel { display: none; }
+        .btn { border-radius: 5px; font-weight: bold; transition: 0.3s; padding: 10px 20px; border: none; cursor: pointer; color: white; }
+        .btn-voltar { background: #4a5568; }
+        .btn-pdf { background: #38a169; }
+        input { background: #1a202c; color: white; border: 1px solid #4a5568; padding: 10px; border-radius: 5px; width: 100%; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <img id="logoInvisivel" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRakETPU1WsKmBi2ppw7axi6RJ9ie0KAWookA&s" crossorigin="anonymous">
+
+    <div class="header-ranking">
+        <h1>🏆 Classificação Final</h1>
+    </div>
+
+    <div class="cat-card">
+        <label style="display:block; margin-bottom:8px; color:#a0aec0;">Nome da Etapa / Cidade:</label>
+        <input type="text" id="inputCidade" placeholder="Ex: Etapa de Verão - Salvador">
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <button class="btn btn-voltar" onclick="location.href='admin.html'">VOLTAR</button>
+            <button class="btn btn-pdf" onclick="exportarPDF()">GERAR PDF</button>
+        </div>
+    </div>
+
+    <div id="rankingContent">A carregar classificação...</div>
+</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+        authDomain: "cronometro-rally.firebaseapp.com",
+        databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+        projectId: "cronometro-rally",
+        appId: "1:341731891354:web:d0c34265be68015e98a723"
+    };
+    
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Categorias conforme o seu original
+    const categorias = ["UTV", "BAIANO 4x2", "BAIANO 4x4", "INICIANTE", "ANTIGOS"];
+
+    function tempoParaSegundos(tempo) {
+        if (!tempo || typeof tempo !== 'string' || tempo === "00:00:00") return 9999999; 
+        const partes = tempo.split(':');
+        return (+partes[0]) * 3600 + (+partes[1]) * 60 + (+partes[2]);
+    }
+
+    db.ref('competidores').on('value', snap => {
+        const data = snap.val();
+        if(!data) {
+            document.getElementById('rankingContent').innerHTML = "Sem dados no banco.";
+            return;
+        }
+
+        let html = "";
+        categorias.forEach(cat => {
+            let list = [];
+            for(let id in data) {
+                const p = data[id];
+                if(p.categoria === cat) {
+                    const ptsGPS = parseInt(p.pontos || 0); 
+                    const bonusFotos = parseInt(p.pontosFotos || 0);
+                    const penalManual = parseInt(p.pontosPenalidadeManual || 0); 
+                    
+                    const penalizacaoExibida = ptsGPS + penalManual;
+                    const totalPts = ptsGPS + bonusFotos + penalManual;
+                    const tempoStr = p.tempoFormatado || p.tempo || "00:00:00";
+
+                    list.push({ 
+                        id, 
+                        nome: p.nome || "Sem Nome",
+                        tempoStr,
+                        tSeg: tempoParaSegundos(tempoStr),
+                        bonusFotos,
+                        penalizacaoExibida,
+                        totalPts
+                    });
+                }
+            }
+            
+            list.sort((a, b) => {
+                if (a.totalPts !== b.totalPts) return b.totalPts - a.totalPts; 
+                return a.tSeg - b.tSeg;
+            });
+
+            if(list.length > 0) {
+                html += `
+                <div class="cat-card">
+                    <h2>Categoria: ${cat}</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="col-pos">Pos</th>
+                                <th class="col-num">Nº</th>
+                                <th class="col-piloto">Piloto</th>
+                                <th class="col-tempo">Tempo</th>
+                                <th class="col-fotos" style="text-align:center;">Fotos</th>
+                                <th class="col-penal" style="text-align:center;">Penalização</th>
+                                <th class="col-pontos" style="text-align:center;">Final</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+                list.forEach((p, i) => {
+                    html += `
+                    <tr>
+                        <td class="col-pos">${i + 1}º</td>
+                        <td class="col-num"><b>${p.id}</b></td>
+                        <td class="col-piloto">${p.nome}</td>
+                        <td class="col-tempo">${p.tempoStr}</td>
+                        <td class="col-fotos" style="text-align:center;">${p.bonusFotos}</td>
+                        <td class="col-penal" style="text-align:center;">${p.penalizacaoExibida}</td>
+                        <td class="col-pontos" style="text-align:center;">${p.totalPts.toLocaleString('pt-BR')} pts</td>
+                    </tr>`;
+                });
+                html += `</tbody></table></div>`;
+            }
+        });
+        document.getElementById('rankingContent').innerHTML = html || "Nenhum competidor encontrado para as categorias listadas.";
+    });
+
+    async function exportarPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const cidade = document.getElementById('inputCidade').value || "Resultado Geral";
+        const img = document.getElementById('logoInvisivel');
+
+        try { doc.addImage(img, 'JPEG', 85, 10, 30, 30); } catch (e) {}
+
+        doc.setFontSize(18);
+        doc.setTextColor(230, 126, 34);
+        doc.text("RELATÓRIO DE PROVA", 105, 50, { align: "center" });
+        doc.setFontSize(12);
+        doc.setTextColor(100, 100, 100);
+        doc.text(cidade, 105, 58, { align: "center" });
+
+        let finalY = 65;
+        document.querySelectorAll('.cat-card').forEach((card) => {
+            const h2 = card.querySelector('h2');
+            if(h2) {
+                const titulo = h2.innerText;
+                const tabela = card.querySelector('table');
+                if (finalY > 240) { doc.addPage(); finalY = 20; }
+                doc.setFontSize(14);
+                doc.setTextColor(0, 0, 0);
+                doc.text(titulo, 14, finalY);
+
+                doc.autoTable({ 
+                    html: tabela, 
+                    startY: finalY + 5, 
+                    theme: 'striped',
+                    headStyles: { fillColor: [230, 126, 34], halign: 'center' },
+                    styles: { fontSize: 8 },
+                    columnStyles: {
+                        0: { cellWidth: 10, halign: 'center' }, // Pos
+                        1: { cellWidth: 10, halign: 'center' }, // Nº
+                        3: { cellWidth: 25, halign: 'center' }, // Tempo
+                        4: { cellWidth: 20, halign: 'center' }, // Fotos
+                        5: { cellWidth: 25, halign: 'center' }, // Penalização
+                        6: { cellWidth: 30, halign: 'center' }  // Final
+                    }
+                });
+                finalY = doc.lastAutoTable.finalY + 15;
+            }
+        });
+        doc.save(`Ranking_${cidade.replace(/\s+/g, '_')}.pdf`);
+    }
+</script>
+</body>
+</html>

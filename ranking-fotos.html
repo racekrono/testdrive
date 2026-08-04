@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Ranking de Fotos - Rally</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a202c; color: white; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
+        .cat-card { background: #2d3748; border-radius: 12px; padding: 20px; margin-bottom: 25px; border-left: 5px solid #3182ce; }
+        h2 { color: #63b3ed; margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; color: #a0aec0; font-size: 12px; padding: 10px; border-bottom: 1px solid #4a5568; }
+        td { padding: 12px; border-bottom: 1px solid #2d3748; }
+        .pontos-foto { font-weight: bold; color: #63b3ed; font-size: 1.1rem; }
+        <button onclick="window.location.href='fotos.html'" style="background: #4a5568;">⬅️​ Voltar</button>
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="admin.html" class="btn-voltar">⬅ Voltar</a>
+        <h1>📸 Ranking de Fotos & Estética</h1>
+        <div id="rankingFotosContent">Carregando...</div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+            projectId: "cronometro-rally"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        db.ref('competidores').on('value', snap => {
+            const data = snap.val();
+            if(!data) return;
+
+            let html = "";
+            const categorias = ["UTV", "BAIANO 4x2", "BAIANO 4x4", "INICIANTE", "ANTIGOS"];
+
+            categorias.forEach(cat => {
+                let lista = [];
+                for(let id in data) {
+                    if(data[id].categoria === cat && data[id].pontosFotos > 0) {
+                        lista.push({ id, ...data[id] });
+                    }
+                }
+
+                // Ordena por quem tem MAIS pontos de fotos
+                lista.sort((a, b) => (b.pontosFotos || 0) - (a.pontosFotos || 0));
+
+                if(lista.length > 0) {
+                    html += `<div class="cat-card">
+                        <h2>${cat}</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Pos</th>
+                                    <th>Nº</th>
+                                    <th>Piloto</th>
+                                    <th>Pontos Extras</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                    lista.forEach((p, i) => {
+                        html += `<tr>
+                            <td>${i+1}º</td>
+                            <td>${p.id}</td>
+                            <td>${p.nome}</td>
+                            <td class="pontos-foto">+${p.pontosFotos || 0}</td>
+                        </tr>`;
+                    });
+                    html += `</tbody></table></div>`;
+                }
+            });
+            document.getElementById('rankingFotosContent').innerHTML = html || "Nenhuma pontuação de fotos registrada.";
+        });
+    </script>
+</body>
+</html>

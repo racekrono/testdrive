@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Pilotos - Race Krono</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a202c; color: white; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #4a5568; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; background: #2d3748; border-radius: 8px; overflow: hidden; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #4a5568; }
+        th { background: #4a5568; font-size: 14px; }
+        tr:hover { background: #3d495a; }
+        .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; color: white; transition: 0.3s; }
+        .btn-edit { background: #3182ce; margin-right: 5px; }
+        .btn-delete { background: #e53e3e; }
+        .btn-back { background: #718096; text-decoration: none; display: inline-block; }
+        input { padding: 8px; border-radius: 4px; border: none; background: #1a202c; color: white; width: 100%; box-sizing: border-box; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; }
+        .modal-content { background: #2d3748; padding: 20px; border-radius: 8px; width: 350px; border: 1px solid #4a5568; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>👥 Gestão de Pilotos</h1>
+        <a href="admin.html" class="btn btn-back">⬅ Voltar ao Admin</a>
+    </header>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nº Carro</th>
+                <th>Nome do Piloto</th>
+                <th>Categoria</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="listaPilotos">
+            </tbody>
+    </table>
+</div>
+
+<div id="modalEdicao" class="modal">
+    <div class="modal-content">
+        <h3>Editar Competidor</h3>
+        <label style="font-size: 12px;">Novo Número do Carro:</label>
+        <input type="text" id="editId" style="margin-bottom: 15px;">
+        
+        <label style="font-size: 12px;">Nome do Piloto:</label>
+        <input type="text" id="editNome" style="margin-bottom: 15px;">
+        
+        <label style="font-size: 12px;">Categoria:</label>
+        <input type="text" id="editCategoria">
+        
+        <div class="modal-actions">
+            <button class="btn btn-back" onclick="fecharModal()">Cancelar</button>
+            <button class="btn btn-edit" onclick="salvarAlteracoes()">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Mesma configuração que você já usa
+    const firebaseConfig = {
+        apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+        authDomain: "cronometro-rally.firebaseapp.com",
+        databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+        projectId: "cronometro-rally",
+        storageBucket: "cronometro-rally.firebasestorage.app",
+        messagingSenderId: "341731891354",
+        appId: "1:341731891354:web:d0c34265be68015e98a723"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let carIdAntigo = "";
+
+    function carregarPilotos() {
+        db.ref('competidores').on('value', snap => {
+            const tbody = document.getElementById('listaPilotos');
+            tbody.innerHTML = "";
+            
+            snap.forEach(child => {
+                const id = child.key;
+                const p = child.val();
+                tbody.innerHTML += `
+                    <tr>
+                        <td><b>${id}</b></td>
+                        <td>${p.nome || '---'}</td>
+                        <td>${p.categoria || '---'}</td>
+                        <td>
+                            <button class="btn btn-edit" onclick="abrirModal('${id}', '${p.nome || ''}', '${p.categoria || ''}')">Editar</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+    }
+
+    function abrirModal(id, nome, categoria) {
+        carIdAntigo = id;
+        document.getElementById('editId').value = id;
+        document.getElementById('editNome').value = nome;
+        document.getElementById('editCategoria').value = categoria;
+        document.getElementById('modalEdicao').style.display = 'flex';
+    }
+
+    function fecharModal() {
+        document.getElementById('modalEdicao').style.display = 'none';
+    }
+
+    async function salvarAlteracoes() {
+        const novoId = document.getElementById('editId').value;
+        const novoNome = document.getElementById('editNome').value;
+        const novaCat = document.getElementById('editCategoria').value;
+
+        if (!novoId) return alert("O número do carro não pode ser vazio.");
+
+        try {
+            const snap = await db.ref(`competidores/${carIdAntigo}`).once('value');
+            let dados = snap.val() || {};
+            
+            dados.nome = novoNome;
+            dados.categoria = novaCat;
+
+            if (novoId !== carIdAntigo) {
+                // Se mudou o número, movemos todos os dados
+                await db.ref(`competidores/${novoId}`).set(dados);
+                await db.ref(`competidores/${carIdAntigo}`).remove();
+                
+                // Opcional: mover rastros e tempos para não perder histórico
+                const rastro = (await db.ref(`rastros/${carIdAntigo}`).once('value')).val();
+                if(rastro) {
+                    await db.ref(`rastros/${novoId}`).set(rastro);
+                    await db.ref(`rastros/${carIdAntigo}`).remove();
+                }
+                
+                const tempos = (await db.ref(`tempos/${carIdAntigo}`).once('value')).val();
+                if(tempos) {
+                    await db.ref(`tempos/${novoId}`).set(tempos);
+                    await db.ref(`tempos/${carIdAntigo}`).remove();
+                }
+            } else {
+                // Apenas atualiza nome e categoria
+                await db.ref(`competidores/${carIdAntigo}`).update({
+                    nome: novoNome,
+                    categoria: novaCat
+                });
+            }
+
+            alert("✅ Dados atualizados!");
+            fecharModal();
+        } catch (e) {
+            alert("Erro ao salvar.");
+            console.error(e);
+        }
+    }
+
+    window.onload = carregarPilotos;
+</script>
+
+</body>
+</html>

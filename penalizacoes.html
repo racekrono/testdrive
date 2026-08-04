@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Penalização Manual - Race Krono</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a202c; color: white; display: flex; justify-content: center; padding: 20px; }
+        .card { background: #2d3748; padding: 25px; border-radius: 12px; width: 100%; max-width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        h2 { color: #e53e3e; text-align: center; margin-top: 0; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; color: #a0aec0; }
+        select, input, textarea, button { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #4a5568; background: #1a202c; color: white; box-sizing: border-box; }
+        textarea { height: 80px; resize: none; }
+        button { background: #e53e3e; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; color: white; }
+        button:hover { background: #c53030; }
+        .btn-voltar { background: #4a5568; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>⚠️ Penalização Manual</h2>
+        
+        <label>Selecionar Piloto:</label>
+        <select id="carSelect">
+            <option value="">Carregando pilotos...</option>
+        </select>
+
+        <label>Pontos (Use "-" para perdoar pontos):</label>
+        <input type="number" id="pontosPenal" placeholder="Ex: 500 ou -500">
+
+        <label>Motivo:</label>
+        <textarea id="motivoPenal" placeholder="Ex: Direção Perigosa ou Ajuste Administrativo"></textarea>
+
+        <button onclick="salvarPenalidade()">APLICAR PONTOS</button>
+        <button class="btn-voltar" onclick="location.href='admin.html'">VOLTAR AO ADMIN</button>
+    </div>
+
+    <script>
+        // Configuração extraída dos seus arquivos oficiais
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            authDomain: "cronometro-rally.firebaseapp.com",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+            projectId: "cronometro-rally"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // FUNÇÃO PARA CARREGAR OS PILOTOS
+        function carregarPilotos() {
+            console.log("Tentando conectar ao banco...");
+            const select = document.getElementById('carSelect');
+            
+            db.ref('competidores').on('value', snap => {
+                console.log("Dados recebidos:", snap.val());
+                if (!snap.exists()) {
+                    select.innerHTML = '<option value="">Nenhum piloto cadastrado</option>';
+                    return;
+                }
+                
+                let opt = '<option value="">Selecione o piloto...</option>';
+                snap.forEach(c => { 
+                    const dados = c.val();
+                    // Mostra o Número (key) e o Nome do piloto
+                    opt += `<option value="${c.key}">Nº ${c.key} - ${dados.nome || 'Sem Nome'}</option>`; 
+                });
+                select.innerHTML = opt;
+            }, error => {
+                console.error("Erro no Firebase:", error);
+                select.innerHTML = '<option value="">Erro ao carregar banco</option>';
+            });
+        }
+
+        async function salvarPenalidade() {
+            const id = document.getElementById('carSelect').value;
+            const pontosNovos = parseInt(document.getElementById('pontosPenal').value) || 0;
+            const motivo = document.getElementById('motivoPenal').value;
+
+            if(!id) return alert("Selecione um piloto!");
+            if(pontosNovos === 0) return alert("Digite um valor (positivo ou negativo)!");
+
+            const acao = pontosNovos > 0 ? "ADICIONAR" : "REMOVER";
+            if(confirm(`Deseja ${acao} ${Math.abs(pontosNovos)} pontos ao piloto ${id}?`)) {
+                try {
+                    // Busca o que já existe de penalidade manual para somar/subtrair
+                    const snap = await db.ref(`competidores/${id}/pontosPenalidadeManual`).once('value');
+                    const pontosAtuais = snap.val() || 0;
+
+                    await db.ref(`competidores/${id}`).update({
+                        pontosPenalidadeManual: pontosAtuais + pontosNovos,
+                        ultimoMotivoPenal: motivo,
+                        ultimaAtualizacaoManual: Date.now()
+                    });
+
+                    alert("Pontos atualizados com sucesso!");
+                    document.getElementById('pontosPenal').value = "";
+                    document.getElementById('motivoPenal').value = "";
+                } catch (error) {
+                    alert("Erro ao salvar: " + error.message);
+                }
+            }
+        }
+
+        // Inicia a carga assim que a página abre
+        carregarPilotos();
+    </script>
+</body>
+</html>

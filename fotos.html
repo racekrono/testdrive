@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Pontuação de Fotos - Rally</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a202c; color: white; display: flex; justify-content: center; padding: 20px; }
+        .card { background: #2d3748; padding: 25px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        h2 { color: #63b3ed; text-align: center; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; color: #a0aec0; }
+        select, input, button { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #4a5568; background: #1a202c; color: white; box-sizing: border-box; }
+        button { background: #3182ce; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #2b6cb0; }
+        .btn-voltar { background: #4a5568; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>📸 Pontos de Fotos</h2>
+        
+        <label>Selecionar Piloto:</label>
+        <select id="carSelect"><option>Carregando...</option></select>
+
+        <label>Pontuação Extras (Fotos):</label>
+        <input type="number" id="pontosFotos" placeholder="Ex: 500" step="100">
+
+        <button onclick="salvarPontosFotos()">ADICIONAR PONTOS</button>
+        <button onclick="window.location.href='ranking-fotos.html'" style="background: #2b6cb0;">📊 Rank Fotos</button>
+        <button onclick="window.location.href='admin.html'" style="background: #4a5568;">⬅️​ Voltar</button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+            projectId: "cronometro-rally"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // Carrega a lista de competidores
+        db.ref('competidores').on('value', snap => {
+            let opt = '<option value="">Selecione o carro...</option>';
+            snap.forEach(c => { opt += `<option value="${c.key}">${c.key} - ${c.val().nome}</option>`; });
+            document.getElementById('carSelect').innerHTML = opt;
+        });
+
+        function salvarPontosFotos() {
+            const id = document.getElementById('carSelect').value;
+            const pontos = parseInt(document.getElementById('pontosFotos').value) || 0;
+
+            if(!id) return alert("Selecione um carro!");
+
+            // Salva especificamente no campo 'pontosFotos' para não sobrescrever o GPS
+            db.ref(`competidores/${id}`).update({
+                pontosFotos: pontos
+            }).then(() => {
+                alert("Pontos de fotos atualizados!");
+                document.getElementById('pontosFotos').value = "";
+            });
+        }
+    </script>
+</body>
+</html>

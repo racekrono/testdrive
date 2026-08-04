@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Ranking Rally</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; }
+        .cat { background: white; margin-bottom: 20px; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h2 { color: #e67e22; border-bottom: 2px solid #e67e22; }
+        table { width: 100%; border-collapse: collapse; }
+        td, th { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .penalidade { color: #c0392b; font-weight: bold; }
+        .tempo-small { font-size: 0.85em; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <h1>🏆 Classificação Oficial</h1>
+    <div id="results">Carregando...</div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            authDomain: "cronometro-rally.firebaseapp.com",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+            projectId: "cronometro-rally",
+            appId: "1:341731891354:web:d0c34265be68015e98a723"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        function tempoParaSegundos(tempo) {
+            // Ajustado para garantir que tempo vazio não ganhe de quem tem tempo
+            if (!tempo || tempo === "00:00:00") return 9999999; 
+            const partes = tempo.split(':');
+            return (+partes[0]) * 3600 + (+partes[1]) * 60 + (+partes[2]);
+        }
+
+        db.ref('competidores').on('value', snap => {
+            const data = snap.val();
+            let html = "";
+            ["UTV", "BAIANO 4x2", "BAIANO 4x4", "INICIANTE", "ANTIGOS"].forEach(c => {
+                let list = [];
+                for(let id in data) {
+                    if(data[id].categoria === c) {
+                        // IMPORTANTE: Pegamos 'tempoFormatado' que é o campo que você usa nos outros arquivos
+                        let tempo = data[id].tempoFormatado || "00:00:00";
+                        list.push({id, ...data[id], tempoComp: tempo});
+                    }
+                }
+
+                list.sort((a, b) => {
+                    // 1º Critério: Pontos (Quem tem MAIS pontos fica no topo)
+                    if ((b.pontos || 0) !== (a.pontos || 0)) {
+                        return (b.pontos || 0) - (a.pontos || 0);
+                    }
+                    // 2º Critério: Tempo (Quem tem MENOR tempo fica no topo)
+                    return tempoParaSegundos(a.tempoComp) - tempoParaSegundos(b.tempoComp);
+                });
+
+                if(list.length > 0) {
+                    html += `<div class="cat"><h2>${c}</h2><table>
+                        <tr>
+                            <th>POS</th>
+                            <th>Nº</th>
+                            <th>Piloto</th>
+                            <th>Tempo (Desempate)</th>
+                            <th>Total Pontos</th>
+                        </tr>`;
+                    
+                    list.forEach((p, i) => {
+                        html += `<tr>
+                            <td>${i+1}º</td>
+                            <td>${p.id}</td>
+                            <td>${p.nome}</td>
+                            <td class="tempo-small">${p.tempoComp}</td>
+                            <td class="penalidade">${p.pontos || 0}</td>
+                        </tr>`;
+                    });
+                    html += `</table></div>`;
+                }
+            });
+            document.getElementById('results').innerHTML = html || "Sem dados.";
+        });
+    </script>
+</body>
+</html>
+

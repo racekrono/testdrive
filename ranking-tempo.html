@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Ranking de Tempo - Rally</title>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; }
+        .cat-box { background: white; margin-bottom: 30px; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { color: #2d3748; border-left: 5px solid #38a169; padding-left: 15px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #edf2f7; color: #4a5568; text-transform: uppercase; font-size: 12px; }
+        td, th { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        .tempo-destaque { font-family: monospace; font-weight: bold; color: #2f855a; font-size: 1.1rem; }
+        .pos { font-weight: bold; color: #ed8936; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center;">⏱️ Tempo de Prova</h1>
+    <button onclick="window.location.href='tempos.html'" style="background: #4a5568;">⬅️​ Voltar</button>
+    <div id="rankingContent">Carregando tempos...</div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBPJkehV9C1x0hiY5dQSwSRtVf5c4P2JGE",
+            databaseURL: "https://cronometro-rally-default-rtdb.firebaseio.com",
+            projectId: "cronometro-rally"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        db.ref('competidores').on('value', snap => {
+            const data = snap.val();
+            if(!data) return document.getElementById('rankingContent').innerHTML = "Nenhum dado encontrado.";
+            
+            let html = "";
+            const categorias = ["UTV", "BAIANO 4x2", "BAIANO 4x4", "INICIANTE", "ANTIGOS"];
+
+            categorias.forEach(catName => {
+                let competidores = [];
+                for(let id in data) {
+                    // Só entra no ranking se tiver tempo registrado
+                    if(data[id].categoria === catName && data[id].tempoTotalMs) {
+                        competidores.push({id, ...data[id]});
+                    }
+                }
+
+                // Ordena por tempo (Menor tempo = 1º lugar)
+                competidores.sort((a, b) => a.tempoTotalMs - b.tempoTotalMs);
+
+                if(competidores.length > 0) {
+                    html += `<div class="cat-box">
+                        <h2>${catName}</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Pos</th>
+                                    <th>Nº</th>
+                                    <th>Piloto</th>
+                                    <th>Largada</th>
+                                    <th>Chegada</th>
+                                    <th>Tempo Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+                    
+                    competidores.forEach((c, index) => {
+                        html += `
+                            <tr>
+                                <td class="pos">${index + 1}º</td>
+                                <td>${c.id}</td>
+                                <td>${c.nome}</td>
+                                <td>${c.horaLargada}</td>
+                                <td>${c.horaChegada}</td>
+                                <td class="tempo-destaque">${c.tempoFormatado}</td>
+                            </tr>`;
+                    });
+
+                    html += `</tbody></table></div>`;
+                }
+            });
+            document.getElementById('rankingContent').innerHTML = html || "Nenhum tempo registrado ainda.";
+        });
+    </script>
+</body>
+</html>
