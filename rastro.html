@@ -35,7 +35,7 @@
         <div class="legenda">
             <strong>Dicionário do Mapa:</strong>
             <div class="item-legenda"><span style="color:#3498db; font-weight:bold;">━━</span> Rota Planejada</div>
-            <div class="item-legenda"><span style="color:#ffff00; font-size:16px;">●</span> Rastro Normal (OK)</div>
+            <div class="item-legenda"><span style="color:#ffff00; font-weight:bold;">━━</span> Rastro Percorrido</div>
             <div class="item-legenda"><span style="color:red; font-size:16px;">●</span> Excesso de Velocidade</div>
             <div class="item-legenda"><span style="color:#38a169; font-size:16px;">●</span> Waypoint Validado</div>
             <div class="item-legenda"><span style="color:#e74c3c; font-size:16px;">●</span> Waypoint Perdido</div>
@@ -86,7 +86,6 @@
                 alert("Por favor, selecione um piloto para gerar o PDF.");
                 return;
             }
-            // Redireciona enviando o parâmetro do piloto selecionado
             window.location.href = `relatoriotelemetria.html?carro=${encodeURIComponent(id)}`;
         }
 
@@ -94,10 +93,9 @@
             let id = document.getElementById('carSelect').value;
             if(!id) return;
 
-            // 1. Limpeza Inicial
+            // Limpeza Inicial
             camadas.rota.clearLayers();
             camadas.alertas.clearLayers();
-            if(camadas.rastro) camadas.rastro.setLatLngs([]); 
             document.getElementById('resumo').innerHTML = "Processando telemetria...";
 
             try {
@@ -116,17 +114,17 @@
 
                 let penTotal = 0;
                 let logs = "";
-                let pontosInfracao = new Map(); // Guardamos o tempo acumulado para o popup
+                let pontosInfracao = new Map();
 
                 if(snapO.exists()) {
                     const rota = snapO.val();
                     rota.features.forEach(feat => {
-                        // Desenha Linha Guia
+                        // Linha Guia
                         if(feat.geometry.type === 'LineString') {
                             L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadas.rota);
                         }
 
-                        // Validação de Waypoints (Círculos)
+                        // Waypoints (Círculos)
                         if(feat.properties?.type === 'circle') {
                             let coords = feat.geometry.coordinates;
                             let raioM = feat.properties.radius || 50;
@@ -135,7 +133,7 @@
                             if(!visitou) { penTotal += 2000; logs += "❌ WP Perdido (-2000)<br>"; }
                         }
 
-                        // Identificação de Radares (Polígonos)
+                        // Radares (Polígonos)
                         else if(feat.geometry.type.includes('Polygon')) {
                             L.geoJSON(feat, {style:{color:'#3498db', weight:1, fillOpacity:0.1}}).addTo(camadas.rota);
                             const vMax = (feat.properties.velocidade || 60) * 1.1;
@@ -144,10 +142,8 @@
                             rastroArr.forEach((p, i) => {
                                 if(i > 0) {
                                     const dur = p.ts - rastroArr[i-1].ts;
-                                    // Se estiver dentro do polígono e acima da velocidade
                                     if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
                                         tempoExcesso += dur;
-                                        // Marca ponto como infração e guarda o tempo acumulado naquele momento
                                         pontosInfracao.set(p.ts, Math.round(tempoExcesso/1000));
                                     }
                                 }
@@ -162,12 +158,20 @@
                     });
                 }
 
-                // 2. DESENHO DO RASTRO OTIMIZADO (VERDES RALO / VERMELHO NÍTIDO)
-                const espacamentoVerde = 4; // Mostra 1 a cada 4 pontos normais
-                
-                rastroArr.forEach((p, index) => {
-                    // Se o ponto foi marcado como infração
-                    if(pontosInfracao.has(p.ts)) {
+                // 1. DESENHO DO RASTRO COMO LINHA CONTÍNUA
+                const coordsRastro = rastroArr.map(p => [p.lat, p.lng]);
+                if (coordsRastro.length > 0) {
+                    L.polyline(coordsRastro, {
+                        color: '#ffff00',
+                        weight: 3,
+                        opacity: 0.85,
+                        smoothFactor: 1
+                    }).addTo(camadas.alertas);
+                }
+
+                // 2. EXIBE MARCADORES VERMELHOS APENAS NAS INFRAÇÕES
+                rastroArr.forEach(p => {
+                    if (pontosInfracao.has(p.ts)) {
                         L.circleMarker([p.lat, p.lng], {
                             radius: 5, 
                             color: '#7B0000', 
@@ -181,24 +185,10 @@
                             Tempo no Radar: ${pontosInfracao.get(p.ts)}s<br>
                             Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}
                         `);
-                    } 
-                    // Se for ponto normal, aplica o espaçamento
-                    else if(index % espacamentoVerde === 0) {
-                        L.circleMarker([p.lat, p.lng], {
-                            radius: 2.5, 
-                            color: '#b8860b', 
-                            weight: 1, 
-                            fillColor: '#ffff00', 
-                            fillOpacity: 0.5
-                        }).addTo(camadas.alertas).bindPopup(`
-                            <b>Rastro OK</b><br>
-                            Hora: ${new Date(p.ts).toLocaleTimeString('pt-BR')}<br>
-                            Vel: ${p.vel} km/h
-                        `);
                     }
                 });
 
-                // 3. Atualiza Resumo Lateral
+                // Atualiza Resumo Lateral
                 document.getElementById('resumo').innerHTML = `
                     <div class="stats-card">
                         <strong>Resultado: ${id}</strong><hr>
