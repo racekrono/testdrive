@@ -43,9 +43,9 @@
     <div class="ui-panel">
         <h2 style="color:#e67e22; margin:0;">🛰️ Relatório de Telemetria</h2>
         <div id="status">Aguardando comando...</div>
-        <div class="btn-group">
-            <button onclick="gerarRelatorios(true)">GERAR PDF ÚNICO</button>
-            <button onclick="gerarRelatorios(false)" style="background:#444;">PDFs SEPARADOS</button>
+        <div class="btn-group" id="botoes-acao">
+            <button onclick="gerarRelatorios(true)">GERAR PDF ÚNICO (TODOS)</button>
+            <button onclick="gerarRelatorios(false)" style="background:#444;">PDFs SEPARADOS (TODOS)</button>
         </div>
     </div>
 
@@ -53,22 +53,12 @@
         <div class="header">
             <div>
                 <h1 style="color:#e67e22; margin:0; font-size: 32px;">Análise de Rastro</h1>
-                <span style="color:#888;">Relatório Oficial de Prova</span>
+                <span style="color:#888;"></span>
             </div>
             <div id="pdf-carro" style="font-size: 24px; font-weight: bold;">Carro --</div>
         </div>
         <div id="map-temp" class="map-container"></div>
-        <div class="footer-info">
-            <div id="pdf-resumo" class="stats-box"></div>
-            <div class="legend-box">
-                <strong style="color:#e67e22">Dicionário:</strong><br><br>
-                <div class="legend-item"><span style="color:#3498db; font-weight:bold;">━━</span> Rota Planejada</div>
-                <div class="legend-item"><span style="color:#ffff00; font-size:18px;">●</span> Rastro Normal</div>
-                <div class="legend-item"><span style="color:red; font-size:18px;">●</span> Excesso Velocidade</div>
-                <div class="legend-item"><span style="color:#38a169; font-size:18px;">●</span> WP Validado</div>
-                <div class="legend-item"><span style="color:#e74c3c; font-size:18px;">●</span> WP Perdido</div>
-            </div>
-        </div>
+        
     </div>
 
     <script>
@@ -79,7 +69,11 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // Configuração do mapa com PREFERCANVAS (Essencial para html2canvas não cortar)
+        // Obtém o parâmetro 'carro' vindo da URL (se houver)
+        const urlParams = new URLSearchParams(window.location.search);
+        const pilotoParam = urlParams.get('carro');
+
+        // Configuração do mapa com PREFERCANVAS
         const map = L.map('map-temp', { 
             zoomControl: false, 
             attributionControl: false,
@@ -88,6 +82,43 @@
         
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
         const camadaElementos = L.featureGroup().addTo(map);
+
+        // Caso haja um piloto especificado na URL, processa e gera automaticamente apenas para ele
+        window.onload = function() {
+            if (pilotoParam) {
+                document.getElementById('botoes-acao').style.display = 'none';
+                gerarRelatorioPilotoUnico(pilotoParam);
+            }
+        };
+
+        async function gerarRelatorioPilotoUnico(id) {
+            const status = document.getElementById('status');
+            status.innerText = `Buscando dados do piloto...`;
+
+            try {
+                const snapPiloto = await db.ref('competidores/' + id).once('value');
+                const nomePiloto = snapPiloto.exists() ? (snapPiloto.val().nome || id) : id;
+
+                status.innerText = `Processando PDF do piloto: ${nomePiloto}...`;
+
+                const canvas = await prepararECapturar(id, nomePiloto);
+                if (!canvas) {
+                    status.innerHTML = "❌ Sem dados de rastro/telemetria para este piloto.";
+                    return;
+                }
+
+                const { jsPDF } = window.jspdf;
+                const docIndiv = new jsPDF('p', 'mm', 'a4');
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                docIndiv.save(`Relatorio_${id}.pdf`);
+
+                status.innerHTML = "✅ PDF GERADO COM SUCESSO!";
+            } catch (err) {
+                console.error(err);
+                status.innerHTML = "❌ Erro ao gerar o relatório.";
+            }
+        }
 
         async function gerarRelatorios(pdfUnico) {
             const status = document.getElementById('status');
@@ -173,7 +204,7 @@
                 }
             });
 
-            document.getElementById('pdf-carro').innerText = `Carro ${id} - ${nome}`;
+            document.getElementById('pdf-carro').innerText = nome;
             document.getElementById('pdf-resumo').innerHTML = `<strong>Resumo de Penalidades</strong><hr>${logs || "✅ Sem infrações."}<br><b>Total: -${penTotal} pts</b>`;
 
             // AJUSTE DE RENDERIZAÇÃO FORÇADA
