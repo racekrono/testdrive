@@ -88,21 +88,14 @@
 
         <div id="setup">
             <img src="https://raw.githubusercontent.com/racekrono/adv/refs/heads/main/Logo.png" class="logo">
-            <h2 style="color:#ffffff; text-align:center; margin-top: 0; font-size: 1.2rem;">Rally de Aventura</h2>
-            <input type="text" id="nome" placeholder="Nome do Piloto" oninput="this.value = this.value.replace(/[0-9]/g, '')">
-            <select id="categoria">
-                <option>UTV</option>
-                <option>BAIANO 4x2</option><option>BAIANO 4x4</option>
-                <option>INICIANTE</option>
-                <option>ANTIGOS</option>
-            </select>
-            <input type="number" id="carro" placeholder="Nº do Carro" min="1" max="100">
+            <h2 style="color:#ffffff; text-align:center; margin-top: 0; font-size: 1.2rem;">Test Drive</h2>
+            <input type="text" id="nome" placeholder="Nome do Piloto">
             <button id="btnIniciar">INICIAR PROVA</button>
         </div>
 
         <div id="ativo">
             <div class="header-dados">
-                <span id="viewCarro">Carro --</span>
+                <span id="viewCarro">Piloto --</span>
                 <div id="viewVel">0.0</div>
                 <span class="unidade-kmh">KM/H</span>
             </div>
@@ -280,8 +273,6 @@
                 const kmItem = parseFloat(div.querySelector('.rb-col-km').innerText);
                 div.classList.remove('rb-item-ativo');
                 
-                // AJUSTE: Só considera que passou para o próximo item 
-                // se o odômetro total for MAIOR do que o KM do item + 1 metro (0.001)
                 if (proximoItemIdx === -1 && odoTotal <= (kmItem + 0.001)) {
                     proximoItemIdx = index;
                 }
@@ -342,9 +333,10 @@
         window.__rk.processarPontoGps = processarPontoGps;
 
         function iniciarFluxoRastreio(num) {
+            const nomeSalvo = localStorage.getItem('rally_piloto_nome') || "Piloto";
             document.getElementById('setup').style.display = 'none';
             document.getElementById('ativo').style.display = 'flex';
-            document.getElementById('viewCarro').innerText = "Carro " + num;
+            document.getElementById('viewCarro').innerText = nomeSalvo;
             window.__rk.carroAtivo = num;
             solicitarWakeLock();
 
@@ -377,35 +369,25 @@
         window.__rk.carregarRoadbook = carregarRoadbook;
 
         document.getElementById('btnIniciar').onclick = async function() {
-            const numRaw = document.getElementById('carro').value;
             const nomeRaw = document.getElementById('nome').value.trim();
-            const cat = document.getElementById('categoria').value;
-            const num = parseInt(numRaw);
-            if(!nomeRaw || !numRaw) return alert("Preencha todos os campos!");
+            if(!nomeRaw) return alert("Por favor, digite o nome do piloto!");
+            
+            // Gera uma chave única/ID baseada no nome para identificação interna
+            const num = nomeRaw.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
             try {
                 const statusSnap = await db.ref('configuracoes/provaAberta').once('value');
                 if (statusSnap.val() !== true) return alert("🚫 A prova está fechada.");
 
-                const snapshot = await db.ref('competidores/' + num).once('value');
-                if (snapshot.exists()) {
-                    const existente = snapshot.val() || {};
-                    const mesmoNome = (existente.nome || '').trim().toLowerCase() === nomeRaw.toLowerCase();
-                    const carroLocal = localStorage.getItem('rally_carro_ativo');
-                    const ehMinhaSessao = carroLocal && parseInt(carroLocal) === num;
-
-                    if (!mesmoNome && !ehMinhaSessao) {
-                        return alert("Este número de carro já existe!\n\nEscolha outro número ou peça ao organizador para liberar.");
-                    }
-                }
-
                 somClique();
 
-                await db.ref('competidores/' + num).set({ nome: nomeRaw, categoria: cat });
+                await db.ref('competidores/' + num).set({ nome: nomeRaw });
                 localStorage.setItem('rally_carro_ativo', num);
+                localStorage.setItem('rally_piloto_nome', nomeRaw);
                 localStorage.setItem('rally_timestamp_login', Date.now());
 
                 if (window.__rk && window.__rk.salvarSessao) {
-                    await window.__rk.salvarSessao({ carro: num, nome: nomeRaw, categoria: cat, login: Date.now() });
+                    await window.__rk.salvarSessao({ carro: num, nome: nomeRaw, login: Date.now() });
                 }
 
                 iniciarFluxoRastreio(num);
@@ -473,6 +455,7 @@
 
         async function limparTudo() {
             localStorage.removeItem('rally_carro_ativo');
+            localStorage.removeItem('rally_piloto_nome');
             localStorage.removeItem('rally_timestamp_login');
             if (window.__rk && window.__rk.limparOffline) {
                 await window.__rk.limparOffline();
@@ -481,7 +464,7 @@
 
         async function enviarDatalogger() {
             const num = window.__rk.carroAtivo || localStorage.getItem('rally_carro_ativo');
-            if (!num) return alert("Nenhuma sessão activa.");
+            if (!num) return alert("Nenhuma sessão ativa.");
             try {
                 if (window.__rk && window.__rk.enviarDataloggerCompleto) {
                     const msg = await window.__rk.enviarDataloggerCompleto(num);
@@ -533,12 +516,7 @@
         }
 
         function verRastro() {
-            const num = window.__rk.carroAtivo || localStorage.getItem('rally_carro_ativo');
-            if (!num) {
-                alert("Você precisa iniciar a prova para visualizar seu rastro.");
-                return;
-            }
-            const url = `https://racekrono.github.io/adv/rastropiloto.html?carro=${encodeURIComponent(num)}`;
+            const url = "https://racekrono.github.io/testdrive/rastro.html";
             if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
                 window.Capacitor.Plugins.Browser.open({ url });
             } else {
@@ -551,10 +529,8 @@
             if (document.getElementById('ativo').style.display === 'flex') return;
             const carro = localStorage.getItem('rally_carro_ativo');
             if (!carro) return;
-            const num = parseInt(carro);
-            if (!num) return;
             try {
-              iniciarFluxoRastreio(num);
+              iniciarFluxoRastreio(carro);
               carregarRoadbook();
             } catch (e) {
               console.error('[restaurarSessaoWeb] falhou:', e);
@@ -582,7 +558,6 @@
           if (location.protocol !== 'https:' && h !== 'localhost') return;
 
           window.addEventListener('load', () => {
-            // Correção aqui: Adicionado o scopo da subpasta /adv/
             navigator.serviceWorker.register('sw.js', { scope: '/adv/' }).catch((e) => {
               console.warn('[PWA] SW falhou:', e);
             });
