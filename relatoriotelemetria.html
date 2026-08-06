@@ -117,7 +117,7 @@
 <body>
 
     <div class="ui-panel">
-        <h2>🛰️ Relatório de Telemetria</h2>
+        <h2>🛰️ Test Drive</h2>
         
         <label for="carSelect">Selecione o Competidor / Carro:</label>
         <select id="carSelect">
@@ -265,7 +265,7 @@
                 smoothFactor: 1
             }).addTo(camadaElementos);
 
-            document.getElementById('pdf-carro').innerText = `${id} - ${nome}`;
+            document.getElementById('pdf-carro').innerText = nome;
 
             map.invalidateSize();
             
