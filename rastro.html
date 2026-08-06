@@ -58,6 +58,7 @@
 
         var camadas = {
             rota: L.featureGroup().addTo(map),
+            rastro: L.featureGroup().addTo(map),
             alertas: L.featureGroup().addTo(map)
         };
 
@@ -95,6 +96,7 @@
 
             // Limpeza Inicial
             camadas.rota.clearLayers();
+            camadas.rastro.clearLayers();
             camadas.alertas.clearLayers();
             document.getElementById('resumo').innerHTML = "Processando telemetria...";
 
@@ -163,21 +165,23 @@
                 if (coordsRastro.length > 0) {
                     L.polyline(coordsRastro, {
                         color: '#ffff00',
-                        weight: 3,
-                        opacity: 0.85,
-                        smoothFactor: 1
-                    }).addTo(camadas.alertas);
+                        weight: 4,
+                        opacity: 0.9,
+                        smoothFactor: 1,
+                        lineJoin: 'round',
+                        lineCap: 'round'
+                    }).addTo(camadas.rastro);
                 }
 
-                // 2. EXIBE MARCADORES VERMELHOS APENAS NAS INFRAÇÕES
+                // 2. MARCADORES DE INFRAÇÃO (PONTOS DE EXCESSO DE VELOCIDADE)
                 rastroArr.forEach(p => {
                     if (pontosInfracao.has(p.ts)) {
                         L.circleMarker([p.lat, p.lng], {
-                            radius: 5, 
+                            radius: 6, 
                             color: '#7B0000', 
-                            weight: 1, 
+                            weight: 1.5, 
                             fillColor: 'red', 
-                            fillOpacity: 0.9,
+                            fillOpacity: 1,
                             zIndexOffset: 1000 
                         }).addTo(camadas.alertas).bindPopup(`
                             <div style="color:red; font-weight:bold;">⚠️ EXCESSO DETECTADO</div>
