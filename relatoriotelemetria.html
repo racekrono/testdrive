@@ -14,11 +14,14 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         .ui-panel { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #e67e22; display: inline-block; min-width: 400px; margin-bottom: 20px; }
-        .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
-        button { background: #e67e22; color: white; border: none; padding: 12px 20px; cursor: pointer; font-weight: bold; border-radius: 8px; }
-        #status { margin-top: 10px; color: #ffcc00; font-size: 14px; }
+        label { font-size: 14px; color: #aaa; display: block; margin-bottom: 8px; text-align: left; }
+        select { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: none; font-size: 14px; background: #2c2c2c; color: white; box-sizing: border-box; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        button { background: #e67e22; color: white; border: none; padding: 12px 20px; cursor: pointer; font-weight: bold; border-radius: 8px; width: 100%; transition: 0.2s; }
+        button:hover { background: #d35400; }
+        #status { margin-top: 15px; color: #ffcc00; font-size: 14px; }
 
-        /* ÁREA DE IMPRESSÃO */
+        /* ÁREA DE IMPRESSÃO (ESCONDIDA FORA DA TELA) */
         #print-area { 
             position: absolute;
             left: 0;
@@ -37,14 +40,20 @@
 <body>
 
     <div class="ui-panel">
-        <h2 style="color:#e67e22; margin:0;">🛰️ Relatório de Telemetria</h2>
-        <div id="status">Aguardando comando...</div>
+        <h2 style="color:#e67e22; margin:0 0 15px 0;">🛰️ Relatório de Telemetria</h2>
+        
+        <label for="carSelect">Selecione o Competidor / Carro:</label>
+        <select id="carSelect">
+            <option value="">Aguardando dados...</option>
+        </select>
+
         <div class="btn-group" id="botoes-acao">
-            <button onclick="gerarRelatorios(true)">GERAR PDF ÚNICO (TODOS)</button>
-            <button onclick="gerarRelatorios(false)" style="background:#444;">PDFs SEPARADOS (TODOS)</button>
+            <button onclick="gerarPdfSelecionado()">GERAR PDF DO CARRO SELECIONADO</button>
         </div>
+        <div id="status">Aguardando seleção...</div>
     </div>
 
+    <!-- Container Oculto para Renderização -->
     <div id="print-area">
         <div class="header">
             <div>
@@ -76,15 +85,34 @@
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
         const camadaElementos = L.featureGroup().addTo(map);
 
-        window.onload = function() {
-            if (pilotoParam) {
-                document.getElementById('botoes-acao').style.display = 'none';
-                gerarRelatorioPilotoUnico(pilotoParam);
+        // Carrega a lista de competidores no select
+        db.ref('competidores').on('value', snap => {
+            const select = document.getElementById('carSelect');
+            let html = '<option value="">Selecione um Carro</option>';
+            if (snap.exists()) {
+                snap.forEach(c => { 
+                    let nomeCompetidor = c.val().nome || c.key;
+                    html += `<option value="${c.key}">${nomeCompetidor}</option>`; 
+                });
             }
-        };
+            select.innerHTML = html;
 
-        async function gerarRelatorioPilotoUnico(id) {
+            // Caso tenha vindo via query param (?carro=101)
+            if (pilotoParam) {
+                select.value = pilotoParam;
+            }
+        });
+
+        // Função principal acionada pelo botão
+        async function gerarPdfSelecionado() {
+            const id = document.getElementById('carSelect').value;
             const status = document.getElementById('status');
+
+            if (!id) {
+                alert("Por favor, selecione um carro no menu antes de gerar o PDF.");
+                return;
+            }
+
             status.innerText = `Buscando dados do piloto...`;
 
             try {
@@ -103,6 +131,8 @@
                 const docIndiv = new jsPDF('p', 'mm', 'a4');
                 const imgData = canvas.toDataURL('image/jpeg', 0.85);
                 docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                
+                // Nome do arquivo salvo
                 docIndiv.save(`Relatorio_${id}.pdf`);
 
                 status.innerHTML = "✅ PDF GERADO COM SUCESSO!";
@@ -112,40 +142,7 @@
             }
         }
 
-        async function gerarRelatorios(pdfUnico) {
-            const status = document.getElementById('status');
-            const snap = await db.ref('competidores').once('value');
-            if(!snap.exists()) return;
-            
-            const carros = snap.val();
-            const ids = Object.keys(carros);
-            const { jsPDF } = window.jspdf;
-            const docGeral = pdfUnico ? new jsPDF('p', 'mm', 'a4') : null;
-            let primeiraPagina = true;
-
-            for (let i = 0; i < ids.length; i++) {
-                const id = ids[i];
-                status.innerText = `Processando Carro ${id}...`;
-                
-                const canvas = await prepararECapturar(id, carros[id].nome);
-                if (!canvas) continue;
-
-                const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                if (pdfUnico) {
-                    if (!primeiraPagina) docGeral.addPage();
-                    docGeral.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                    primeiraPagina = false;
-                } else {
-                    const docIndiv = new jsPDF('p', 'mm', 'a4');
-                    docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                    docIndiv.save(`Relatorio_Carro_${id}.pdf`);
-                }
-            }
-
-            if (pdfUnico) docGeral.save("Relatorio_Completo_Rally.pdf");
-            status.innerHTML = "✅ CONCLUÍDO COM SUCESSO!";
-        }
-
+        // Monta o mapa do competidor e tira o print
         async function prepararECapturar(id, nome) {
             camadaElementos.clearLayers();
             const [snapR, snapO] = await Promise.all([
@@ -157,6 +154,7 @@
             let rastro = Object.values(snapR.val()).sort((a,b) => a.ts - b.ts);
             let infraMap = new Map();
 
+            // Renderização do Percurso / WPs / Zonas de Radar
             if(snapO.exists()) {
                 snapO.val().features.forEach(feat => {
                     if(feat.geometry.type === 'LineString') {
@@ -168,12 +166,10 @@
                     }
                     else if(feat.geometry.type.includes('Polygon')) {
                         const vMax = (feat.properties.velocidade || 60) * 1.1;
-                        let tempoExcesso = 0;
                         rastro.forEach((p, i) => {
                             if(i > 0) {
                                 const dur = p.ts - rastro[i-1].ts;
                                 if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
-                                    tempoExcesso += dur;
                                     infraMap.set(p.ts, true);
                                 }
                             }
@@ -182,7 +178,7 @@
                 });
             }
 
-            // 1. DESENHA O RASTRO COMO LINHA CONTÍNUA
+            // 1. DESENHA O RASTRO COMO LINHA CONTÍNUA (AMARELA)
             const latLngs = rastro.map(p => [p.lat, p.lng]);
             if (latLngs.length > 0) {
                 L.polyline(latLngs, {
@@ -193,7 +189,7 @@
                 }).addTo(camadaElementos);
             }
 
-            // 2. DESTACA PONTOS DE INFRAÇÃO COM PONTOS VERMELHOS
+            // 2. DESTACA APENAS AS INFRAÇÕES COM PONTOS VERMELHOS
             rastro.forEach((p) => {
                 if (infraMap.has(p.ts)) {
                     L.circleMarker([p.lat, p.lng], {
@@ -215,6 +211,7 @@
                 map.fitBounds(camadaElementos.getBounds(), { padding: [50, 50], animate: false });
             }
 
+            // Aguarda o carregamento das imagens de satélite antes de tirar o print
             await new Promise(res => setTimeout(res, 3000));
 
             return await html2canvas(document.getElementById('print-area'), { 
