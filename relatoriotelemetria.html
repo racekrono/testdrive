@@ -2,8 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerador de Relatórios - Race Krono</title>
+    <title>Gerador de Relatórios - Test Drive</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
@@ -13,129 +12,46 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #121212; 
-            color: #ffffff; 
-            text-align: center; 
-            padding: 20px; 
-            margin: 0;
-        }
-        .ui-panel { 
-            background: #1e1e1e; 
-            padding: 25px 30px; 
-            border-radius: 12px; 
-            border: 1px solid #ff9800; 
-            display: inline-block; 
-            width: 90%;
-            max-width: 480px; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-        }
-        h2 {
-            color: #ff9800;
-            margin-top: 0;
-            margin-bottom: 15px;
-            font-size: 22px;
-        }
-        label { 
-            font-size: 14px; 
-            color: #ccc; 
-            display: block; 
-            margin-bottom: 8px; 
-            text-align: left; 
-            font-weight: bold;
-        }
-        select { 
-            width: 100%; 
-            padding: 12px; 
-            margin-bottom: 20px; 
-            border-radius: 8px; 
-            border: 1px solid #444; 
-            font-size: 15px; 
-            background: #2b2b2b; 
-            color: #fff; 
-            box-sizing: border-box; 
-            outline: none;
-        }
-        select:focus {
-            border-color: #ff9800;
-        }
-        .btn-main { 
-            background: #ff9800; 
-            color: #000; 
-            border: none; 
-            padding: 14px 20px; 
-            cursor: pointer; 
-            font-weight: bold; 
-            border-radius: 8px; 
-            width: 100%; 
-            transition: 0.2s; 
-            font-size: 15px;
-            text-transform: uppercase;
-        }
-        .btn-main:hover { 
-            background: #e68a00; 
-        }
-        #status { 
-            margin-top: 15px; 
-            color: #ffcc00; 
-            font-size: 14px; 
-            min-height: 20px;
-            font-weight: 500;
-        }
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
+        .ui-panel { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #e67e22; display: inline-block; min-width: 400px; margin-bottom: 20px; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
+        button { background: #e67e22; color: white; border: none; padding: 12px 20px; cursor: pointer; font-weight: bold; border-radius: 8px; }
+        #status { margin-top: 10px; color: #ffcc00; font-size: 14px; }
 
-        /* ÁREA DE RENDERIZAÇÃO DO PDF (POSICIONADA FORA DA TELA SEM Ocultar Canvas) */
+        /* ÁREA DE IMPRESSÃO */
         #print-area { 
-            position: fixed;
+            position: absolute;
+            left: 0;
             top: 0;
-            left: -9999px;
             width: 1000px;
             background: #121212;
             padding: 30px;
             box-sizing: border-box;
-            z-index: -9999;
+            transform: translateX(-2000px);
         }
         
-        .header-pdf { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: flex-end; 
-            border-bottom: 3px solid #ff9800; 
-            padding-bottom: 10px; 
-            margin-bottom: 20px; 
-        }
-        .map-container { 
-            width: 940px; 
-            height: 1100px; 
-            border-radius: 12px; 
-            border: 1px solid #333; 
-            background: #000; 
-            position: relative; 
-        }
+        .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #e67e22; padding-bottom: 10px; margin-bottom: 20px; }
+        .map-container { width: 940px; height: 1100px; border-radius: 15px; border: 1px solid #333; background: #000; position: relative; }
     </style>
 </head>
 <body>
 
     <div class="ui-panel">
-        <h2>🛰️ Test Drive</h2>
-        
-        <label for="carSelect">Selecione o Competidor / Carro:</label>
-        <select id="carSelect">
-            <option value="">Carregando lista de veículos...</option>
-        </select>
-
-        <button class="btn-main" onclick="gerarPdfCarroUnico()">GERAR PDF DO CARRO SELECIONADO</button>
-
-        <div id="status">Aguardando seleção...</div>
+        <h2 style="color:#e67e22; margin:0;">🛰️ Relatório</h2>
+        <div id="status">Aguardando comando...</div>
+        <div class="btn-group" id="botoes-acao">
+            <button onclick="gerarRelatorios(true)">GERAR PDF ÚNICO (TODOS)</button>
+            <button onclick="gerarRelatorios(false)" style="background:#444;">PDFs SEPARADOS (TODOS)</button>
+        </div>
     </div>
 
-    <!-- ÁREA CAPTURADA PELO HTML2CANVAS -->
     <div id="print-area">
-        <div class="header-pdf">
+        <div class="header">
             <div>
-                <h1 style="color:#ff9800; margin:0; font-size: 32px;">Análise de Telemetria</h1>
+                <h1 style="color:#e67e22; margin:0; font-size: 32px;">Análise de Telemetria</h1>
+                <span style="color:#888;"></span>
             </div>
-            <div id="pdf-carro" style="font-size: 26px; font-weight: bold; color: #ffffff;">--</div>
+            <div id="pdf-carro" style="font-size: 24px; font-weight: bold; text-transform: uppercase;">--</div>
         </div>
         <div id="map-temp" class="map-container"></div>
     </div>
@@ -148,141 +64,171 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // Inicialização do Mapa Leaflet com Canvas
+        const urlParams = new URLSearchParams(window.location.search);
+        const pilotoParam = urlParams.get('carro');
+
         const map = L.map('map-temp', { 
             zoomControl: false, 
             attributionControl: false,
             preferCanvas: true 
         }).setView([0, 0], 13);
         
-        // Habilita crossOrigin no TileLayer para permitir captura pelo html2canvas
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            crossOrigin: true
-        }).addTo(map);
-
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
         const camadaElementos = L.featureGroup().addTo(map);
 
-        // Detecta parâmetro de URL se enviado (ex: ?carro=101)
-        const urlParams = new URLSearchParams(window.location.search);
-        const carFromUrl = urlParams.get('carro') || urlParams.get('id');
-
-        // Carrega competidores no menu <select>
-        db.ref('competidores').on('value', snap => {
-            const select = document.getElementById('carSelect');
-            let html = '<option value="">-- Escolha um Carro --</option>';
-            
-            if (snap.exists()) {
-                snap.forEach(c => { 
-                    let data = c.val();
-                    let nomeCompetidor = (data && data.nome) ? `${c.key} - ${data.nome}` : `Carro ${c.key}`;
-                    let selected = (carFromUrl === c.key) ? 'selected' : '';
-                    html += `<option value="${c.key}" ${selected}>${nomeCompetidor}</option>`; 
-                });
-            } else {
-                html = '<option value="">Nenhum competidor encontrado</option>';
+        window.onload = function() {
+            if (pilotoParam) {
+                document.getElementById('botoes-acao').style.display = 'none';
+                gerarRelatorioPilotoUnico(pilotoParam);
             }
-            select.innerHTML = html;
-        });
+        };
 
-        async function gerarPdfCarroUnico() {
-            const idCarro = document.getElementById('carSelect').value;
+        async function gerarRelatorioPilotoUnico(id) {
             const status = document.getElementById('status');
-
-            if (!idCarro) {
-                alert("Selecione um veículo no menu antes de gerar o PDF.");
-                return;
-            }
-
-            status.innerText = `Buscando dados do veículo ${idCarro}...`;
+            status.innerText = `Buscando dados do piloto...`;
 
             try {
-                const snapPiloto = await db.ref('competidores/' + idCarro).once('value');
-                const nomePiloto = snapPiloto.exists() ? (snapPiloto.val().nome || `Carro ${idCarro}`) : `Carro ${idCarro}`;
+                const snapPiloto = await db.ref('competidores/' + id).once('value');
+                let nomePiloto = id;
+                if (snapPiloto.exists() && snapPiloto.val().nome) {
+                    nomePiloto = snapPiloto.val().nome;
+                }
 
-                status.innerText = `Processando mapa de: ${nomePiloto}...`;
+                status.innerText = `Processando PDF de: ${nomePiloto}...`;
 
-                const canvas = await prepararECapturar(idCarro, nomePiloto);
+                const canvas = await prepararECapturar(id, nomePiloto);
                 if (!canvas) {
-                    status.innerHTML = "❌ Não há registros de rastro para este carro.";
+                    status.innerHTML = "❌ Sem dados de rastro/telemetria para este piloto.";
                     return;
                 }
 
-                status.innerText = `Gerando arquivo PDF...`;
-
                 const { jsPDF } = window.jspdf;
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const imgData = canvas.toDataURL('image/jpeg', 0.90);
-                pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                
-                pdf.save(`Relatorio_Telemetria_${idCarro}.pdf`);
+                const docIndiv = new jsPDF('p', 'mm', 'a4');
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                docIndiv.save(`Relatorio_${id}.pdf`);
 
-                status.innerHTML = "✅ PDF Gerado com sucesso!";
+                status.innerHTML = "✅ PDF GERADO COM SUCESSO!";
             } catch (err) {
                 console.error(err);
-                status.innerHTML = `❌ Erro na geração: ${err.message}`;
+                status.innerHTML = `❌ Erro ao gerar o relatório: ${err.message}`;
             }
+        }
+
+        async function gerarRelatorios(pdfUnico) {
+            const status = document.getElementById('status');
+            const snap = await db.ref('competidores').once('value');
+            if(!snap.exists()) return;
+            
+            const carros = snap.val();
+            const ids = Object.keys(carros);
+            const { jsPDF } = window.jspdf;
+            const docGeral = pdfUnico ? new jsPDF('p', 'mm', 'a4') : null;
+            let primeiraPagina = true;
+
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                const nomeCompetidor = carros[id].nome || id;
+                status.innerText = `Processando Competidor ${nomeCompetidor}...`;
+                
+                const canvas = await prepararECapturar(id, nomeCompetidor);
+                if (!canvas) continue;
+
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                if (pdfUnico) {
+                    if (!primeiraPagina) docGeral.addPage();
+                    docGeral.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                    primeiraPagina = false;
+                } else {
+                    const docIndiv = new jsPDF('p', 'mm', 'a4');
+                    docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                    docIndiv.save(`Relatorio_${id}.pdf`);
+                }
+            }
+
+            if (pdfUnico) docGeral.save("Relatorio_Completo_Rally.pdf");
+            status.innerHTML = "✅ CONCLUÍDO COM SUCESSO!";
         }
 
         async function prepararECapturar(id, nome) {
             camadaElementos.clearLayers();
-
             const [snapR, snapO] = await Promise.all([
                 db.ref('rastros/' + id).once('value'),
                 db.ref('configuracoes/percurso').once('value')
             ]);
 
             if (!snapR.exists()) return null;
+            let rastro = Object.values(snapR.val()).sort((a,b) => a.ts - b.ts);
+            let infraMap = new Map();
 
-            let valRastro = snapR.val();
-            let rastroArray = Array.isArray(valRastro) ? valRastro : Object.values(valRastro);
-            
-            // Filtra coordenadas válidas e ordena por timestamp
-            let rastro = rastroArray
-                .filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number')
-                .sort((a,b) => (a.ts || 0) - (b.ts || 0));
-
-            if (rastro.length === 0) return null;
-
-            // Desenha linhas do percurso oficial (se existirem)
-            if (snapO.exists() && snapO.val().features) {
+            if(snapO.exists()) {
                 snapO.val().features.forEach(feat => {
-                    if (feat.geometry && feat.geometry.type === 'LineString') {
-                        L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {
-                            color: '#3498db', 
-                            weight: 3, 
-                            opacity: 0.4 
-                        }).addTo(camadaElementos);
+                    if(feat.geometry.type === 'LineString') {
+                        L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadaElementos);
+                    }
+                    if(feat.properties?.type === 'circle') {
+                        let visitou = rastro.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(feat.geometry.coordinates))*1000) <= (feat.properties.radius || 50));
+                        L.circle([feat.geometry.coordinates[1], feat.geometry.coordinates[0]], { radius: feat.properties.radius || 50, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2, weight: 2 }).addTo(camadaElementos);
+                    }
+                    else if(feat.geometry.type.includes('Polygon')) {
+                        const vMax = (feat.properties.velocidade || 60) * 1.1;
+                        let tempoExcesso = 0;
+                        rastro.forEach((p, i) => {
+                            if(i > 0) {
+                                const dur = p.ts - rastro[i-1].ts;
+                                if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
+                                    tempoExcesso += dur;
+                                    infraMap.set(p.ts, true);
+                                }
+                            }
+                        });
                     }
                 });
             }
 
-            // APENAS LINHA CONTÍNUA PARA O RASTRO (SEM BOLINHAS)
+            // 1. DESENHA O RASTRO COMO LINHA CONTÍNUA
             const latLngs = rastro.map(p => [p.lat, p.lng]);
-            L.polyline(latLngs, {
-                color: '#ffff00',
-                weight: 4,
-                opacity: 0.9,
-                smoothFactor: 1
-            }).addTo(camadaElementos);
+            if (latLngs.length > 0) {
+                L.polyline(latLngs, {
+                    color: '#ffff00',
+                    weight: 3,
+                    opacity: 0.85,
+                    smoothFactor: 1
+                }).addTo(camadaElementos);
+            }
 
+            // 2. DESTACA PONTOS DE INFRAÇÃO COM PONTOS VERMELHOS
+            rastro.forEach((p) => {
+                if (infraMap.has(p.ts)) {
+                    L.circleMarker([p.lat, p.lng], {
+                        radius: 5,
+                        color: '#7B0000',
+                        fillColor: 'red',
+                        fillOpacity: 1,
+                        weight: 1
+                    }).addTo(camadaElementos);
+                }
+            });
+
+            // CORREÇÃO: Define apenas o nome limpo no cabeçalho
             document.getElementById('pdf-carro').innerText = nome;
 
             map.invalidateSize();
             
             if (camadaElementos.getLayers().length > 0) {
-                map.fitBounds(camadaElementos.getBounds(), { padding: [40, 40], animate: false });
+                map.fitBounds(camadaElementos.getBounds(), { padding: [50, 50], animate: false });
             }
 
-            // Aguarda 2 segundos para garantir o carregamento completo dos tiles do mapa
-            await new Promise(res => setTimeout(res, 2000));
+            await new Promise(res => setTimeout(res, 3000));
 
             return await html2canvas(document.getElementById('print-area'), { 
                 useCORS: true, 
-                allowTaint: true,
                 backgroundColor: "#121212", 
                 scale: 2,
                 width: 1000,
-                height: 1250
+                height: 1250,
+                x: 0,
+                y: 0
             });
         }
     </script>
