@@ -122,7 +122,7 @@
             <button onclick="gerarPdfCarroSelecionado()">GERAR PDF DO CARRO SELECIONADO</button>
         </div>
 
-        <div id="status">Aguardando comando...</div>
+        <div id="status">Aguardando seleção...</div>
     </div>
 
     <!-- AREA CAPTURADA PELO HTML2CANVAS -->
@@ -153,13 +153,14 @@
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
         const camadaElementos = L.featureGroup().addTo(map);
 
-        // Preenche o Select com os competidores do banco de dados
+        // Carrega competidores no menu <select>
         db.ref('competidores').on('value', snap => {
             const select = document.getElementById('carSelect');
             let html = '<option value="">-- Selecione um Carro --</option>';
             if (snap.exists()) {
                 snap.forEach(c => { 
-                    let nomeCompetidor = c.val().nome || c.key;
+                    let data = c.val();
+                    let nomeCompetidor = (data && data.nome) ? data.nome : c.key;
                     html += `<option value="${c.key}">${nomeCompetidor}</option>`; 
                 });
             } else {
@@ -168,17 +169,17 @@
             select.innerHTML = html;
         });
 
-        // Executa a geração APENAS para o id selecionado no dropdown
+        // Executa a geração EXCLUSIVAMENTE para o ID escolhido no menu
         async function gerarPdfCarroSelecionado() {
             const idCarro = document.getElementById('carSelect').value;
             const status = document.getElementById('status');
 
             if (!idCarro) {
-                alert("Por favor, escolha um carro no menu antes de gerar o PDF.");
+                alert("Por favor, selecione um carro no menu suspenso antes de gerar o PDF.");
                 return;
             }
 
-            status.innerText = `Buscando telemetria do veículo...`;
+            status.innerText = `Buscando telemetria do veículo ${idCarro}...`;
 
             try {
                 const snapPiloto = await db.ref('competidores/' + idCarro).once('value');
@@ -197,7 +198,7 @@
                 const imgData = canvas.toDataURL('image/jpeg', 0.85);
                 docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
                 
-                // Salva somente o PDF do veículo escolhido
+                // Salva o arquivo individual
                 docIndiv.save(`Relatorio_${idCarro}.pdf`);
 
                 status.innerHTML = "✅ PDF GERADO COM SUCESSO!";
@@ -215,26 +216,36 @@
             ]);
 
             if (!snapR.exists()) return null;
-            let rastro = Object.values(snapR.val()).sort((a,b) => a.ts - b.ts);
-            let infraMap = new Map();
 
-            // Desenha percurso e zonas
-            if(snapO.exists()) {
+            let valRastro = snapR.val();
+            let rastroArray = Array.isArray(valRastro) ? valRastro : Object.values(valRastro);
+            
+            // Ordenação e limpeza de dados
+            let rastro = rastroArray
+                .filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number')
+                .sort((a,b) => (a.ts || 0) - (b.ts || 0));
+
+            if (rastro.length === 0) return null;
+
+            let infraSet = new Set();
+
+            // Processamento do percurso
+            if(snapO.exists() && snapO.val().features) {
                 snapO.val().features.forEach(feat => {
-                    if(feat.geometry.type === 'LineString') {
+                    if(feat.geometry && feat.geometry.type === 'LineString') {
                         L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadaElementos);
                     }
                     if(feat.properties?.type === 'circle') {
                         let visitou = rastro.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(feat.geometry.coordinates))*1000) <= (feat.properties.radius || 50));
                         L.circle([feat.geometry.coordinates[1], feat.geometry.coordinates[0]], { radius: feat.properties.radius || 50, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2, weight: 2 }).addTo(camadaElementos);
                     }
-                    else if(feat.geometry.type.includes('Polygon')) {
+                    else if(feat.geometry && feat.geometry.type && feat.geometry.type.includes('Polygon')) {
                         const vMax = (feat.properties.velocidade || 60) * 1.1;
                         rastro.forEach((p, i) => {
                             if(i > 0) {
                                 const dur = p.ts - rastro[i-1].ts;
                                 if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
-                                    infraMap.set(p.ts, true);
+                                    infraSet.add(p.ts || i);
                                 }
                             }
                         });
@@ -242,26 +253,25 @@
                 });
             }
 
-            // 1. RASTRO EM LINHA CONTÍNUA (AMARELA)
+            // 1. DESENHA APENAS A LINHA CONTÍNUA DO RASTRO (SEM BOLINHAS)
             const latLngs = rastro.map(p => [p.lat, p.lng]);
-            if (latLngs.length > 0) {
-                L.polyline(latLngs, {
-                    color: '#ffff00',
-                    weight: 3,
-                    opacity: 0.85,
-                    smoothFactor: 1
-                }).addTo(camadaElementos);
-            }
+            L.polyline(latLngs, {
+                color: '#ffff00',
+                weight: 4,
+                opacity: 0.9,
+                smoothFactor: 1
+            }).addTo(camadaElementos);
 
-            // 2. DESTACA INFRAÇÕES COM PONTOS VERMELHOS
-            rastro.forEach((p) => {
-                if (infraMap.has(p.ts)) {
+            // 2. ADICIONA MARCADORES VERMELHOS APENAS EM PONTOS DE INFRAÇÃO
+            rastro.forEach((p, i) => {
+                let idPonto = p.ts || i;
+                if (infraSet.has(idPonto)) {
                     L.circleMarker([p.lat, p.lng], {
-                        radius: 5,
+                        radius: 6,
                         color: '#7B0000',
-                        fillColor: 'red',
+                        fillColor: '#FF0000',
                         fillOpacity: 1,
-                        weight: 1
+                        weight: 2
                     }).addTo(camadaElementos);
                 }
             });
@@ -274,7 +284,7 @@
                 map.fitBounds(camadaElementos.getBounds(), { padding: [50, 50], animate: false });
             }
 
-            await new Promise(res => setTimeout(res, 3000));
+            await new Promise(res => setTimeout(res, 2500));
 
             return await html2canvas(document.getElementById('print-area'), { 
                 useCORS: true, 
