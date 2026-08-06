@@ -2,7 +2,8 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Gerador de Relatórios - Telemetria</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Relatórios - Race Krono</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
@@ -13,52 +14,55 @@
 
     <style>
         body { 
-            font-family: sans-serif; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             background: #121212; 
-            color: white; 
+            color: #ffffff; 
             text-align: center; 
             padding: 20px; 
+            margin: 0;
         }
         .ui-panel { 
             background: #1e1e1e; 
             padding: 25px 30px; 
             border-radius: 12px; 
-            border: 1px solid #e67e22; 
+            border: 1px solid #ff9800; 
             display: inline-block; 
-            min-width: 420px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 480px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        }
+        h2 {
+            color: #ff9800;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 22px;
         }
         label { 
             font-size: 14px; 
-            color: #aaa; 
+            color: #ccc; 
             display: block; 
             margin-bottom: 8px; 
             text-align: left; 
+            font-weight: bold;
         }
         select { 
             width: 100%; 
             padding: 12px; 
             margin-bottom: 20px; 
-            border-radius: 6px; 
+            border-radius: 8px; 
             border: 1px solid #444; 
             font-size: 15px; 
-            background: #2c2c2c; 
-            color: white; 
+            background: #2b2b2b; 
+            color: #fff; 
             box-sizing: border-box; 
             outline: none;
         }
         select:focus {
-            border-color: #e67e22;
+            border-color: #ff9800;
         }
-        .btn-group { 
-            display: flex; 
-            gap: 10px; 
-            justify-content: center; 
-        }
-        button { 
-            background: #e67e22; 
-            color: white; 
+        .btn-main { 
+            background: #ff9800; 
+            color: #000; 
             border: none; 
             padding: 14px 20px; 
             cursor: pointer; 
@@ -66,41 +70,44 @@
             border-radius: 8px; 
             width: 100%; 
             transition: 0.2s; 
-            font-size: 14px;
+            font-size: 15px;
+            text-transform: uppercase;
         }
-        button:hover { 
-            background: #d35400; 
+        .btn-main:hover { 
+            background: #e68a00; 
         }
         #status { 
             margin-top: 15px; 
             color: #ffcc00; 
             font-size: 14px; 
+            min-height: 20px;
+            font-weight: 500;
         }
 
-        /* ÁREA DE RENDERIZAÇÃO DO PDF (OCULTA) */
+        /* ÁREA DE RENDERIZAÇÃO DO PDF (POSICIONADA FORA DA TELA SEM Ocultar Canvas) */
         #print-area { 
-            position: absolute;
-            left: 0;
+            position: fixed;
             top: 0;
+            left: -9999px;
             width: 1000px;
             background: #121212;
             padding: 30px;
             box-sizing: border-box;
-            transform: translateX(-2000px);
+            z-index: -9999;
         }
         
-        .header { 
+        .header-pdf { 
             display: flex; 
             justify-content: space-between; 
             align-items: flex-end; 
-            border-bottom: 3px solid #e67e22; 
+            border-bottom: 3px solid #ff9800; 
             padding-bottom: 10px; 
             margin-bottom: 20px; 
         }
         .map-container { 
             width: 940px; 
             height: 1100px; 
-            border-radius: 15px; 
+            border-radius: 12px; 
             border: 1px solid #333; 
             background: #000; 
             position: relative; 
@@ -110,28 +117,25 @@
 <body>
 
     <div class="ui-panel">
-        <h2 style="color:#e67e22; margin:0 0 15px 0;">🛰️ Relatório de Telemetria</h2>
+        <h2>🛰️ Relatório de Telemetria</h2>
         
-        <!-- SELEÇÃO DO CARRO -->
         <label for="carSelect">Selecione o Competidor / Carro:</label>
         <select id="carSelect">
-            <option value="">Carregando competidores...</option>
+            <option value="">Carregando lista de veículos...</option>
         </select>
 
-        <div class="btn-group">
-            <button onclick="gerarPdfCarroSelecionado()">GERAR PDF DO CARRO SELECIONADO</button>
-        </div>
+        <button class="btn-main" onclick="gerarPdfCarroUnico()">GERAR PDF DO CARRO SELECIONADO</button>
 
         <div id="status">Aguardando seleção...</div>
     </div>
 
-    <!-- AREA CAPTURADA PELO HTML2CANVAS -->
+    <!-- ÁREA CAPTURADA PELO HTML2CANVAS -->
     <div id="print-area">
-        <div class="header">
+        <div class="header-pdf">
             <div>
-                <h1 style="color:#e67e22; margin:0; font-size: 32px;">Análise de Rastro</h1>
+                <h1 style="color:#ff9800; margin:0; font-size: 32px;">Análise de Telemetria</h1>
             </div>
-            <div id="pdf-carro" style="font-size: 24px; font-weight: bold;">--</div>
+            <div id="pdf-carro" style="font-size: 26px; font-weight: bold; color: #ffffff;">--</div>
         </div>
         <div id="map-temp" class="map-container"></div>
     </div>
@@ -144,24 +148,35 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // Inicialização do Mapa Leaflet com Canvas
         const map = L.map('map-temp', { 
             zoomControl: false, 
             attributionControl: false,
             preferCanvas: true 
         }).setView([0, 0], 13);
         
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+        // Habilita crossOrigin no TileLayer para permitir captura pelo html2canvas
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            crossOrigin: true
+        }).addTo(map);
+
         const camadaElementos = L.featureGroup().addTo(map);
+
+        // Detecta parâmetro de URL se enviado (ex: ?carro=101)
+        const urlParams = new URLSearchParams(window.location.search);
+        const carFromUrl = urlParams.get('carro') || urlParams.get('id');
 
         // Carrega competidores no menu <select>
         db.ref('competidores').on('value', snap => {
             const select = document.getElementById('carSelect');
-            let html = '<option value="">-- Selecione um Carro --</option>';
+            let html = '<option value="">-- Escolha um Carro --</option>';
+            
             if (snap.exists()) {
                 snap.forEach(c => { 
                     let data = c.val();
-                    let nomeCompetidor = (data && data.nome) ? data.nome : c.key;
-                    html += `<option value="${c.key}">${nomeCompetidor}</option>`; 
+                    let nomeCompetidor = (data && data.nome) ? `${c.key} - ${data.nome}` : `Carro ${c.key}`;
+                    let selected = (carFromUrl === c.key) ? 'selected' : '';
+                    html += `<option value="${c.key}" ${selected}>${nomeCompetidor}</option>`; 
                 });
             } else {
                 html = '<option value="">Nenhum competidor encontrado</option>';
@@ -169,47 +184,48 @@
             select.innerHTML = html;
         });
 
-        // Executa a geração EXCLUSIVAMENTE para o ID escolhido no menu
-        async function gerarPdfCarroSelecionado() {
+        async function gerarPdfCarroUnico() {
             const idCarro = document.getElementById('carSelect').value;
             const status = document.getElementById('status');
 
             if (!idCarro) {
-                alert("Por favor, selecione um carro no menu suspenso antes de gerar o PDF.");
+                alert("Selecione um veículo no menu antes de gerar o PDF.");
                 return;
             }
 
-            status.innerText = `Buscando telemetria do veículo ${idCarro}...`;
+            status.innerText = `Buscando dados do veículo ${idCarro}...`;
 
             try {
                 const snapPiloto = await db.ref('competidores/' + idCarro).once('value');
-                const nomePiloto = snapPiloto.exists() ? (snapPiloto.val().nome || idCarro) : idCarro;
+                const nomePiloto = snapPiloto.exists() ? (snapPiloto.val().nome || `Carro ${idCarro}`) : `Carro ${idCarro}`;
 
-                status.innerText = `Gerando PDF de: ${nomePiloto}...`;
+                status.innerText = `Processando mapa de: ${nomePiloto}...`;
 
                 const canvas = await prepararECapturar(idCarro, nomePiloto);
                 if (!canvas) {
-                    status.innerHTML = "❌ Sem dados de rastro gravados para este carro.";
+                    status.innerHTML = "❌ Não há registros de rastro para este carro.";
                     return;
                 }
 
-                const { jsPDF } = window.jspdf;
-                const docIndiv = new jsPDF('p', 'mm', 'a4');
-                const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                docIndiv.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                
-                // Salva o arquivo individual
-                docIndiv.save(`Relatorio_${idCarro}.pdf`);
+                status.innerText = `Gerando arquivo PDF...`;
 
-                status.innerHTML = "✅ PDF GERADO COM SUCESSO!";
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const imgData = canvas.toDataURL('image/jpeg', 0.90);
+                pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                
+                pdf.save(`Relatorio_Telemetria_${idCarro}.pdf`);
+
+                status.innerHTML = "✅ PDF Gerado com sucesso!";
             } catch (err) {
                 console.error(err);
-                status.innerHTML = `❌ Erro ao gerar: ${err.message}`;
+                status.innerHTML = `❌ Erro na geração: ${err.message}`;
             }
         }
 
         async function prepararECapturar(id, nome) {
             camadaElementos.clearLayers();
+
             const [snapR, snapO] = await Promise.all([
                 db.ref('rastros/' + id).once('value'),
                 db.ref('configuracoes/percurso').once('value')
@@ -220,40 +236,27 @@
             let valRastro = snapR.val();
             let rastroArray = Array.isArray(valRastro) ? valRastro : Object.values(valRastro);
             
-            // Ordenação e limpeza de dados
+            // Filtra coordenadas válidas e ordena por timestamp
             let rastro = rastroArray
                 .filter(p => p && typeof p.lat === 'number' && typeof p.lng === 'number')
                 .sort((a,b) => (a.ts || 0) - (b.ts || 0));
 
             if (rastro.length === 0) return null;
 
-            let infraSet = new Set();
-
-            // Processamento do percurso
-            if(snapO.exists() && snapO.val().features) {
+            // Desenha linhas do percurso oficial (se existirem)
+            if (snapO.exists() && snapO.val().features) {
                 snapO.val().features.forEach(feat => {
-                    if(feat.geometry && feat.geometry.type === 'LineString') {
-                        L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {color: '#3498db', weight: 4, opacity: 0.5}).addTo(camadaElementos);
-                    }
-                    if(feat.properties?.type === 'circle') {
-                        let visitou = rastro.some(p => (turf.distance(turf.point([p.lng, p.lat]), turf.point(feat.geometry.coordinates))*1000) <= (feat.properties.radius || 50));
-                        L.circle([feat.geometry.coordinates[1], feat.geometry.coordinates[0]], { radius: feat.properties.radius || 50, color: visitou ? '#38a169' : '#e74c3c', fillOpacity: 0.2, weight: 2 }).addTo(camadaElementos);
-                    }
-                    else if(feat.geometry && feat.geometry.type && feat.geometry.type.includes('Polygon')) {
-                        const vMax = (feat.properties.velocidade || 60) * 1.1;
-                        rastro.forEach((p, i) => {
-                            if(i > 0) {
-                                const dur = p.ts - rastro[i-1].ts;
-                                if(dur < 30000 && p.vel > vMax && turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), feat)) {
-                                    infraSet.add(p.ts || i);
-                                }
-                            }
-                        });
+                    if (feat.geometry && feat.geometry.type === 'LineString') {
+                        L.polyline(feat.geometry.coordinates.map(c => [c[1], c[0]]), {
+                            color: '#3498db', 
+                            weight: 3, 
+                            opacity: 0.4 
+                        }).addTo(camadaElementos);
                     }
                 });
             }
 
-            // 1. DESENHA APENAS A LINHA CONTÍNUA DO RASTRO (SEM BOLINHAS)
+            // APENAS LINHA CONTÍNUA PARA O RASTRO (SEM BOLINHAS)
             const latLngs = rastro.map(p => [p.lat, p.lng]);
             L.polyline(latLngs, {
                 color: '#ffff00',
@@ -262,38 +265,24 @@
                 smoothFactor: 1
             }).addTo(camadaElementos);
 
-            // 2. ADICIONA MARCADORES VERMELHOS APENAS EM PONTOS DE INFRAÇÃO
-            rastro.forEach((p, i) => {
-                let idPonto = p.ts || i;
-                if (infraSet.has(idPonto)) {
-                    L.circleMarker([p.lat, p.lng], {
-                        radius: 6,
-                        color: '#7B0000',
-                        fillColor: '#FF0000',
-                        fillOpacity: 1,
-                        weight: 2
-                    }).addTo(camadaElementos);
-                }
-            });
-
-            document.getElementById('pdf-carro').innerText = nome || id;
+            document.getElementById('pdf-carro').innerText = `${id} - ${nome}`;
 
             map.invalidateSize();
             
             if (camadaElementos.getLayers().length > 0) {
-                map.fitBounds(camadaElementos.getBounds(), { padding: [50, 50], animate: false });
+                map.fitBounds(camadaElementos.getBounds(), { padding: [40, 40], animate: false });
             }
 
-            await new Promise(res => setTimeout(res, 2500));
+            // Aguarda 2 segundos para garantir o carregamento completo dos tiles do mapa
+            await new Promise(res => setTimeout(res, 2000));
 
             return await html2canvas(document.getElementById('print-area'), { 
                 useCORS: true, 
+                allowTaint: true,
                 backgroundColor: "#121212", 
                 scale: 2,
                 width: 1000,
-                height: 1250,
-                x: 0,
-                y: 0
+                height: 1250
             });
         }
     </script>
