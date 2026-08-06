@@ -28,7 +28,7 @@
         <label>Competidor para Análise:</label>
         <select id="carSelect"><option value="">Aguardando dados...</option></select>
         <button onclick="analisar()">PROCESSAR TELEMETRIA</button>
-        <button onclick="gerarPdf()" style="background: #805ad5;">Gerar PDF</button>
+        <button onclick="gerarPdf()" style="background: #805ad5;">GERAR PDF DESTE CARRO</button>
         <div id="resumo">
             <div class="stats-card">Selecione um carro e clique em analisar para verificar radares e waypoints.</div>
         </div>
@@ -81,13 +81,15 @@
             select.innerHTML = html;
         });
 
+        // FUNÇÃO AJUSTADA: Abre o gerador de PDF filtrando exclusivamente o carro selecionado
         function gerarPdf() {
             let id = document.getElementById('carSelect').value;
             if (!id) {
-                alert("Por favor, selecione um piloto para gerar o PDF.");
+                alert("Por favor, selecione um carro no menu antes de gerar o PDF.");
                 return;
             }
-            window.location.href = `relatoriotelemetria.html?carro=${encodeURIComponent(id)}`;
+            // Abre o relatório em uma nova aba com a instrução direta de baixar o PDF do carro
+            window.open(`relatoriotelemetria.html?carro=${encodeURIComponent(id)}`, '_blank');
         }
 
         async function analisar() {
